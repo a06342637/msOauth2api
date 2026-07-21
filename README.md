@@ -19,7 +19,7 @@
 3. **部署到 Vercel**：
    - 点击下面的按钮，一键部署到 Vercel。
 
-   [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/HChaoHui/msOauth2api)
+   [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/a06342637/msOauth2api)
 
    - 在 Vercel 部署页面，填写你的项目名称，然后点击 `Deploy` 按钮。
 
