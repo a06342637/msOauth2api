@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>邮箱系统</title>
   <link rel="stylesheet" href="/mail.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.2.0/marked.min.js"></script>
 </head>
 <body>
 
@@ -17,25 +16,28 @@
 
   <div class="container">
     <header class="header">
-      <h1>邮箱系统</h1>
+      <div class="brand-mark" aria-hidden="true">M</div>
+      <div class="brand-copy">
+        <h1>邮箱工作台</h1>
+        <p>Microsoft OAuth 邮箱集中管理</p>
+      </div>
+      <span class="status-pill"><i></i> 本地安全存储</span>
     </header>
 
     <main class="main">
       <!-- 账号列表区域 -->
       <div id="account-section" class="section active">
+        <div class="section-heading">
+          <div><span class="eyebrow">ACCOUNTS</span><h2>邮箱账号</h2><p>导入、查找并集中处理你的邮箱账号</p></div>
+        </div>
         <div class="toolbar" id="toolbar">
           <label class="toolbar-field">
             <span>搜索账号</span>
             <input type="text" class="search-input" id="search-input" placeholder="输入邮箱地址">
           </label>
-          <label class="toolbar-field">
-            <span>接口密码</span>
-            <input type="password" class="password-input" id="toolbar-password" placeholder="访问密码" title="用于访问受保护的 API 接口">
-          </label>
           <div class="toolbar-actions">
-            <button class="btn btn-primary" data-action="import" title="从 txt 文件导入邮箱账号">+ 导入账号文件</button>
-            <button class="btn" data-action="refresh-token" title="刷新已勾选账号的 Refresh Token">刷新选中 Token</button>
-            <button class="btn btn-danger" data-action="delete" title="删除已勾选账号">删除选中账号</button>
+            <button class="btn btn-primary" data-action="import" title="粘贴文本或选择文件导入邮箱账号">导入</button>
+            <button class="btn btn-danger" data-action="delete" title="删除已勾选账号">批量删除</button>
           </div>
         </div>
 
@@ -69,18 +71,20 @@
       <!-- 邮件列表区域 -->
       <div id="mail-section" class="section">
         <div class="mail-section">
-          <h2>
-            <button class="back-btn" id="back-btn">← 返回</button>
-            邮件列表
-          </h2>
+          <div class="mail-header">
+            <button class="back-btn" id="back-btn">← 返回账号</button>
+            <div class="mail-heading-copy"><span class="eyebrow">MESSAGES</span><h2>邮件列表</h2><p id="current-mailbox-label">查看当前邮箱中的邮件</p></div>
+            <button class="btn btn-primary mail-refresh-btn" id="refresh-mails">↻ 刷新邮件</button>
+          </div>
 
           <div class="table-wrap">
             <table class="table" id="mail-table">
               <thead>
                 <tr>
                   <th>发件人</th>
+                  <th>收件人</th>
                   <th>主题</th>
-                  <th>日期</th>
+                  <th>时间</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -96,7 +100,7 @@
     </main>
 
     <footer class="footer">
-      Powered by <a href="https://github.com/HChaoHui/msOauth2api" target="_blank" rel="noopener noreferrer">MS OAuth2API</a>
+      Powered by <a href="https://github.com/a06342637/msOauth2api" target="_blank" rel="noopener noreferrer">a06342637/msOauth2api</a><span class="footer-version">v0.5.1</span>
     </footer>
   </div>
 
@@ -107,14 +111,21 @@
         <h3>导入账号</h3>
       </div>
       <div class="modal-body">
-        <div class="upload-box" id="upload-box">
-          <p>点击或拖拽文件到此处上传</p>
-          <p id="file-info"></p>
-          <input type="file" id="import-file" accept=".txt">
+        <div class="form-group">
+          <label for="import-text">账号内容（每行一个）</label>
+          <textarea id="import-text" rows="9" placeholder="邮箱----密码----Client ID----Refresh Token&#10;邮箱----密码----Client ID----Refresh Token"></textarea>
+          <p class="form-help">可直接粘贴账号；也可以在下方选择文件或文件夹，系统会合并读取其中的文件。</p>
+        </div>
+        <div class="import-file-actions">
+          <button type="button" class="btn" id="choose-files">选择文件</button>
+          <button type="button" class="btn" id="choose-folder">选择文件夹</button>
+          <span id="file-info" class="file-info">未选择文件</span>
+          <input type="file" id="import-file" accept=".txt,.csv" multiple hidden>
+          <input type="file" id="import-folder" webkitdirectory directory multiple hidden>
         </div>
         <div class="form-group">
-          <label>分隔符</label>
-          <input type="text" id="import-delimiter" value="----" placeholder="分隔符">
+          <label for="import-delimiter">分隔符</label>
+          <input type="text" id="import-delimiter" value="----" placeholder="默认使用 ----">
         </div>
       </div>
       <div class="modal-footer">
@@ -124,19 +135,35 @@
     </div>
   </div>
 
-  <!-- 刷新 Token 确认弹窗 -->
-  <div class="modal-overlay" id="refresh-token-modal">
+
+  <!-- 编辑账号弹窗 -->
+  <div class="modal-overlay edit-account-modal" id="edit-account-modal">
     <div class="modal">
       <div class="modal-header">
-        <h3>确认刷新 Token</h3>
+        <span class="eyebrow">ACCOUNT DETAILS</span>
+        <h3>编辑账号</h3>
       </div>
-      <div class="modal-body">
-        <p>确定刷新选中的 <strong id="refresh-token-count">0</strong> 个账号 Token？</p>
-        <p>刷新成功后会覆盖本地保存的 Refresh Token。</p>
+      <div class="modal-body account-edit-form">
+        <div class="form-group">
+          <label for="edit-email">邮箱</label>
+          <input type="email" id="edit-email" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="edit-password">密码 / Key</label>
+          <input type="text" id="edit-password" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="edit-client-id">Client ID</label>
+          <input type="text" id="edit-client-id" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="edit-refresh-token">Refresh Token</label>
+          <textarea id="edit-refresh-token" rows="6"></textarea>
+        </div>
       </div>
       <div class="modal-footer">
-        <button class="btn" id="refresh-token-cancel">取消</button>
-        <button class="btn btn-primary" id="refresh-token-confirm">确认刷新</button>
+        <button class="btn" id="edit-account-cancel">取消</button>
+        <button class="btn btn-primary" id="edit-account-save">保存修改</button>
       </div>
     </div>
   </div>
@@ -161,37 +188,20 @@
   <!-- 邮件详情弹窗 -->
   <div class="modal-overlay mail-modal" id="mail-modal">
     <div class="modal">
-      <div class="modal-header">
+      <div class="modal-header mail-detail-header">
+        <span class="eyebrow">MESSAGE DETAIL</span>
         <h3 id="mail-modal-title"></h3>
       </div>
       <div class="modal-body">
         <div class="mail-meta">
           <p><strong>发件人：</strong><span id="mail-modal-sender"></span></p>
-          <p><strong>日期：</strong><span id="mail-modal-date"></span></p>
+          <p><strong>收件人：</strong><span id="mail-modal-recipient"></span></p>
+          <p><strong>时间：</strong><span id="mail-modal-date"></span></p>
         </div>
         <div class="mail-content" id="mail-modal-content"></div>
       </div>
       <div class="modal-footer">
         <button class="btn" onclick="mailApp.closeModal()">关闭</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- AI 解读弹窗 -->
-  <div class="modal-overlay ai-modal" id="ai-modal">
-    <div class="modal ai-modal-content">
-      <div class="modal-header">
-        <h3>AI 解读</h3>
-      </div>
-      <div class="modal-body">
-        <div class="ai-analysis-card">
-          <div class="ai-status" id="ai-status">正在连接 AI 解读服务...</div>
-          <div class="ai-thinking" id="ai-thinking"></div>
-          <div class="ai-summary ai-cursor" id="ai-summary">准备生成摘要...</div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn" id="ai-close">停止</button>
       </div>
     </div>
   </div>

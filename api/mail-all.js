@@ -101,7 +101,8 @@ async function get_emails(access_token, mailbox) {
 
         const response_emails = emails.map(item => {
             return {
-                send: item['from']['emailAddress']['address'],
+                send: item['from']?.['emailAddress']?.['address'] || '',
+                to: (item['toRecipients'] || []).map(recipient => recipient.emailAddress?.address).filter(Boolean).join(', '),
                 subject: item['subject'],
                 text: item['bodyPreview'],
                 html: item['body']['content'],
@@ -120,15 +121,6 @@ async function get_emails(access_token, mailbox) {
 
 module.exports = async (req, res) => {
 
-    const { password } = req.method === 'GET' ? req.query : req.body;
-
-    const expectedPassword = process.env.PASSWORD;
-
-    if (password !== expectedPassword && expectedPassword) {
-        return res.status(401).json({
-            error: '密码验证失败'
-        });
-    }
 
     // 根据请求方法从 query 或 body 中获取参数
     let { refresh_token, client_id, email, mailbox } = req.method === 'GET' ? req.query : req.body;
@@ -211,7 +203,8 @@ module.exports = async (req, res) => {
                         simpleParser(stream, (err, mail) => {
                             if (err) throw err;
                             const data = {
-                                send: mail.from.text,
+                                send: mail.from?.text || '',
+                                to: mail.to?.text || email,
                                 subject: mail.subject,
                                 text: mail.text,
                                 html: mail.html,
