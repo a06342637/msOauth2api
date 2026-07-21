@@ -11,7 +11,6 @@
     MAIL_ITEMS_PER_PAGE: 10,
     DEFAULT_ITEMS_PER_PAGE: 10,
     API_BASE: '/api/mail-all',
-    AI_API: '/api/ai'
   }
 
   const state = {
@@ -48,10 +47,21 @@
   }
 
   /* ---------- localStorage ---------- */
-  const getEmailData = () => JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEY)) || []
+  const getEmailData = () => {
+    try {
+      const data = JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEY) || '[]')
+      return Array.isArray(data) ? data : []
+    } catch (_) {
+      localStorage.removeItem(CONFIG.STORAGE_KEY)
+      return []
+    }
+  }
   const setEmailData = (data) => localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(data))
 
   /* ---------- 工具函数 ---------- */
+  const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[char])
   const showToast = (message) => {
     const toast = $('#toast')
     if (!toast) return
@@ -62,12 +72,12 @@
 
   /* ---------- 账号列表相关 ---------- */
   const getFilteredData = () => {
-    const data = getEmailData()
+    const data = state.emailData
     const indexedData = data.map((item, index) => ({ ...item, index }))
     if (!state.searchKeyword) return indexedData
     const kw = state.searchKeyword.toLowerCase()
     return indexedData.filter(item =>
-      item.email.toLowerCase().includes(kw)
+      String(item.email || '').toLowerCase().includes(kw)
     )
   }
 
@@ -95,9 +105,9 @@
           <td class="check-col">
             <input type="checkbox" data-index="${item.index}" ${state.selectedItems.includes(String(item.index)) ? 'checked' : ''}>
           </td>
-          <td class="text-ellipsis" title="${item.email}">${item.email}</td>
-          <td class="text-ellipsis" title="${item.clientId}">${item.clientId}</td>
-          <td class="refresh-token" title="${item.refreshToken}">${formatRefreshToken(item.refreshToken)}</td>
+          <td class="text-ellipsis" title="${escapeHtml(item.email)}">${escapeHtml(item.email)}</td>
+          <td class="text-ellipsis" title="${escapeHtml(item.clientId)}">${escapeHtml(item.clientId)}</td>
+          <td class="refresh-token" title="${escapeHtml(item.refreshToken)}">${escapeHtml(formatRefreshToken(item.refreshToken))}</td>
           <td>
             <div class="actions">
               <button class="btn btn-sm" data-action="edit">编辑</button>
@@ -158,6 +168,10 @@
   }
 
   const render = () => {
+    const maxIndex = state.emailData.length - 1
+    state.selectedItems = state.selectedItems.filter(index => Number.isInteger(Number(index)) && Number(index) >= 0 && Number(index) <= maxIndex)
+    const totalPages = Math.max(1, Math.ceil(getFilteredData().length / state.itemsPerPage))
+    state.currentPage = Math.min(Math.max(1, state.currentPage), totalPages)
     renderTable()
     renderPagination()
   }
@@ -191,6 +205,11 @@
 
     const data = getEmailData()
     if (!data[index]) return
+    const duplicate = data.some((item, itemIndex) => itemIndex !== index && String(item.email || '').toLowerCase() === email.toLowerCase())
+    if (duplicate) {
+      showToast('该邮箱已存在，不能重复保存')
+      return
+    }
     data[index] = { email, password, clientId, refreshToken }
     setEmailData(data)
     state.emailData = data
@@ -352,6 +371,7 @@
   /* ---------- 邮件列表 ---------- */
   const loadMailList = (refreshToken, clientId, email, mailbox) => {
     state.currentMailbox = { refreshToken, clientId, email, mailbox }
+    state.currentMailPage = 1
     $('#current-mailbox-label').textContent = `${email} · ${mailbox === 'Junk' ? '垃圾箱' : '收件箱'}`
     showLoading()
     const params = new URLSearchParams({
@@ -408,21 +428,24 @@
   const renderMailTable = () => {
     const tbody = $('#mail-table tbody')
     const total = state.mailData.length
+    const totalPages = Math.max(1, Math.ceil(total / CONFIG.MAIL_ITEMS_PER_PAGE))
+    state.currentMailPage = Math.min(Math.max(1, state.currentMailPage), totalPages)
     const start = (state.currentMailPage - 1) * CONFIG.MAIL_ITEMS_PER_PAGE
     const end = start + CONFIG.MAIL_ITEMS_PER_PAGE
     const pageData = state.mailData.slice(start, end)
 
     if (total === 0) {
       tbody.innerHTML = `<tr><td colspan="5" class="empty">暂无邮件</td></tr>`
+      $('#mail-pagination-btns').innerHTML = ''
       return
     }
 
     tbody.innerHTML = pageData.map(item => `
       <tr>
-        <td class="mail-address" title="${item.send || ''}">${item.send || '未知发件人'}</td>
-        <td class="mail-address" title="${item.to || state.currentMailbox?.email || ''}">${item.to || state.currentMailbox?.email || '未知收件人'}</td>
-        <td class="mail-subject">${item.subject || '(无主题)'}</td>
-        <td class="mail-date">${item.date || ''}</td>
+        <td class="mail-address" title="${escapeHtml(item.send || '')}">${escapeHtml(item.send || '未知发件人')}</td>
+        <td class="mail-address" title="${escapeHtml(item.to || state.currentMailbox?.email || '')}">${escapeHtml(item.to || state.currentMailbox?.email || '未知收件人')}</td>
+        <td class="mail-subject">${escapeHtml(item.subject || '(无主题)')}</td>
+        <td class="mail-date">${escapeHtml(item.date || '')}</td>
         <td><button class="btn btn-sm" data-action="view">查看</button></td>
       </tr>
     `).join('')
@@ -431,7 +454,7 @@
   }
 
   const renderMailPagination = () => {
-    const totalPages = Math.ceil(state.mailData.length / CONFIG.MAIL_ITEMS_PER_PAGE)
+    const totalPages = Math.max(1, Math.ceil(state.mailData.length / CONFIG.MAIL_ITEMS_PER_PAGE))
     const btns = $('#mail-pagination-btns')
 
     if (totalPages <= 1) {
@@ -575,10 +598,10 @@
           openAccountEditor(index)
           break
         case 'inbox':
-          loadMailList(state.emailData[index].refreshToken, state.emailData[index].clientId, state.emailData[index].email, 'INBOX')
+          if (state.emailData[index]) loadMailList(state.emailData[index].refreshToken, state.emailData[index].clientId, state.emailData[index].email, 'INBOX')
           break
         case 'junk':
-          loadMailList(state.emailData[index].refreshToken, state.emailData[index].clientId, state.emailData[index].email, 'Junk')
+          if (state.emailData[index]) loadMailList(state.emailData[index].refreshToken, state.emailData[index].clientId, state.emailData[index].email, 'Junk')
           break
         case 'delete':
           deleteEmail(index)
