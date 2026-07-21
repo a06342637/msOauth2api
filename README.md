@@ -1,15 +1,5 @@
 # 微软 OAuth2 API 无服务器版本
 
-> **服务器版本看另一个仓库 https://github.com/HChaoHui/MS_OAuth2API_Next**
-
-🌟 **简化微软 OAuth2 认证流程，轻松集成到你的应用中！** 🌟
-
-本项目将微软的 OAuth2 认证取件流程封装成一个简单的 API，并部署在 Vercel 的无服务器平台上。通过这个 API，你可以轻松地在你的应用中进行 OAuth2 取件功能。   
-目前已支持 **Graph API** 取件 会自动判断是否是Graph API   
-推荐使用Graph API取件 比IMAP取件速度更快 更稳定
-
-同时提供 `mail.html` 在线邮箱管理页面，支持账号导入、收件箱/垃圾箱查看、Refresh Token 批量刷新、AI 邮件解读等功能。
-
 ## 🚀 快速开始
 
 1. **Star 本项目**：首先，点击右上角的 `Star` 按钮，给这个项目点个赞吧！
