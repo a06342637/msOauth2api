@@ -40,10 +40,10 @@
   }
   const closeModal = (id) => {
     $(`#${id}`).style.display = 'none'
-    if (!$('.modal-overlay').some(el => el.style.display === 'flex')) document.body.classList.remove('modal-open')
+    if (![...document.querySelectorAll('.modal-overlay')].some(el => el.style.display === 'flex')) document.body.classList.remove('modal-open')
   }
   const closeAllModals = () => {
-    $('.modal-overlay').forEach(el => el.style.display = 'none')
+    document.querySelectorAll('.modal-overlay').forEach(el => { el.style.display = 'none' })
     document.body.classList.remove('modal-open')
   }
 
@@ -465,7 +465,7 @@
     if (item.html) {
       // 用 sandbox iframe 隔离渲染邮件 HTML，阻止脚本访问 localStorage 等父页面资源
       const iframe = document.createElement('iframe')
-      iframe.setAttribute('sandbox', '')
+      iframe.setAttribute('sandbox', 'allow-same-origin')
       iframe.setAttribute('referrerpolicy', 'no-referrer')
       iframe.srcdoc = item.html
       iframe.setAttribute('scrolling', 'no')
@@ -480,7 +480,9 @@
           }
           resize()
           doc?.querySelectorAll('img').forEach(img => img.addEventListener('load', resize, { once: true }))
-          if (window.ResizeObserver && doc?.documentElement) new ResizeObserver(resize).observe(doc.documentElement)
+          requestAnimationFrame(resize)
+          setTimeout(resize, 250)
+          setTimeout(resize, 1000)
         } catch (e) { /* 无法读取时保留安全的默认高度 */ }
       })
     } else {
@@ -520,6 +522,16 @@
   /* ---------- 事件绑定 ---------- */
   const bindEvents = () => {
     $('#theme-toggle').addEventListener('click', toggleTheme)
+
+    document.addEventListener('click', e => {
+      const closeButton = e.target.closest('[data-close-modal]')
+      if (closeButton) closeModal(closeButton.closest('.modal-overlay').id)
+    })
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeAllModals()
+    })
+
 
     // 搜索
     $('#search-input').addEventListener('input', e => {

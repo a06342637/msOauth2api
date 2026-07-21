@@ -118,6 +118,7 @@
     <div class="modal">
       <div class="modal-header">
         <h3>导入账号</h3>
+      <button class="modal-close" type="button" data-close-modal aria-label="关闭弹窗" title="关闭">×</button>
       </div>
       <div class="modal-body">
         <div class="form-group">
@@ -138,7 +139,7 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn" onclick="mailApp.closeModal()">取消</button>
+        <button class="btn" data-close-modal>取消</button>
         <button class="btn btn-primary" id="import-confirm">导入</button>
       </div>
     </div>
@@ -151,6 +152,7 @@
       <div class="modal-header">
         <span class="eyebrow">ACCOUNT DETAILS</span>
         <h3>编辑账号</h3>
+      <button class="modal-close" type="button" data-close-modal aria-label="关闭弹窗" title="关闭">×</button>
       </div>
       <div class="modal-body account-edit-form">
         <div class="form-group">
@@ -182,6 +184,7 @@
     <div class="modal">
       <div class="modal-header">
         <h3>确认删除账号</h3>
+      <button class="modal-close" type="button" data-close-modal aria-label="关闭弹窗" title="关闭">×</button>
       </div>
       <div class="modal-body">
         <p>确定删除选中的 <strong id="delete-confirm-count">0</strong> 个账号？</p>
@@ -200,6 +203,7 @@
       <div class="modal-header mail-detail-header">
         <span class="eyebrow">MESSAGE DETAIL</span>
         <h3 id="mail-modal-title"></h3>
+      <button class="modal-close" type="button" data-close-modal aria-label="关闭弹窗" title="关闭">×</button>
       </div>
       <div class="modal-body">
         <div class="mail-meta">
@@ -210,7 +214,7 @@
         <div class="mail-content" id="mail-modal-content"></div>
       </div>
       <div class="modal-footer">
-        <button class="btn" onclick="mailApp.closeModal()">关闭</button>
+        <button class="btn" data-close-modal>关闭</button>
       </div>
     </div>
   </div>

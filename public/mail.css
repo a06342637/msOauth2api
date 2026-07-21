@@ -1008,3 +1008,19 @@ body::before {
 }
 
 body.modal-open { overflow: hidden !important; }
+
+
+/* Modal reliability fixes */
+.modal-header { position: relative; padding-right: 64px; }
+.modal-close { position: absolute; top: 16px; right: 18px; width: 34px; height: 34px; padding: 0; display: inline-grid; place-items: center; border: 1px solid transparent; border-radius: 50%; background: transparent; color: #777; font: 400 25px/1 Arial, sans-serif; cursor: pointer; transition: background .18s, color .18s, transform .18s; }
+.modal-close:hover { background: #efefec; color: #111; transform: rotate(4deg); }
+.modal-close:focus-visible { outline: 2px solid #111; outline-offset: 2px; }
+.mail-modal .modal-body { overflow-y: scroll; scrollbar-width: auto; scrollbar-color: #aaa #efefec; }
+.mail-modal .modal-body::-webkit-scrollbar { width: 11px; }
+.mail-modal .modal-body::-webkit-scrollbar-track { background: #efefec; border-radius: 999px; }
+.mail-modal .modal-body::-webkit-scrollbar-thumb { background: #aaa; border: 2px solid #efefec; border-radius: 999px; }
+[data-theme="dark"] .modal-close { color: #aaa; }
+[data-theme="dark"] .modal-close:hover { background: #30302d; color: #fff; }
+[data-theme="dark"] .mail-modal .modal-body { scrollbar-color: #666 #242422; }
+[data-theme="dark"] .mail-modal .modal-body::-webkit-scrollbar-track { background: #242422; }
+[data-theme="dark"] .mail-modal .modal-body::-webkit-scrollbar-thumb { background: #666; border-color: #242422; }
