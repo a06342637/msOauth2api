@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>邮箱系统</title>
   <link rel="stylesheet" href="/mail.css">
+  <script>document.documentElement.dataset.theme = localStorage.getItem('mailTheme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')</script>
 </head>
 <body>
 
@@ -21,7 +22,10 @@
         <h1>邮箱工作台</h1>
         <p>Microsoft OAuth 邮箱集中管理</p>
       </div>
-      <span class="status-pill"><i></i> 本地安全存储</span>
+      <div class="header-actions">
+        <span class="status-pill"><i></i> 本地安全存储</span>
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换明暗主题" title="切换明暗主题"><span class="theme-icon" aria-hidden="true"></span></button>
+      </div>
     </header>
 
     <main class="main">
@@ -36,8 +40,7 @@
             <input type="text" class="search-input" id="search-input" placeholder="输入邮箱地址">
           </label>
           <div class="toolbar-actions">
-            <button class="btn btn-primary" data-action="import" title="粘贴文本或选择文件导入邮箱账号">导入</button>
-            <button class="btn btn-danger" data-action="delete" title="删除已勾选账号">批量删除</button>
+            <button class="btn btn-primary" data-action="import" title="粘贴文本或选择文件导入邮箱账号">批量导入</button>
           </div>
         </div>
 
@@ -57,7 +60,13 @@
         </div>
 
         <div class="pagination-wrap">
-          <span class="pagination-info" id="pagination-info">共 0 条</span>
+          <div class="pagination-left">
+            <span class="pagination-info" id="pagination-info">共 0 条</span>
+            <div class="batch-actions" id="batch-actions" hidden>
+              <button class="btn btn-sm btn-export" type="button" data-action="export">复制导出</button>
+              <button class="btn btn-sm btn-danger" type="button" data-action="delete">批量删除</button>
+            </div>
+          </div>
           <div class="pagination" id="pagination-btns"></div>
           <select class="per-page" id="per-page">
             <option value="10">10 条/页</option>

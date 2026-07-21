@@ -949,3 +949,62 @@ body::before {
 .pagination-info .selected-count { display: inline-flex; align-items: center; margin-left: 8px; padding: 4px 9px; border-radius: 999px; background: #eeeeea; color: #777; font-weight: 650; }
 .pagination-info .selected-count.is-active { background: #111; color: #fff; }
 .footer-version { display: inline-flex; margin-left: 9px; padding-left: 9px; border-left: 1px solid #d7d7d2; color: #aaa; font-variant-numeric: tabular-nums; }
+
+
+/* v0.5.1 theme, selection actions and mail detail scrolling */
+.header-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.theme-toggle { width: 42px; height: 28px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: #f0f0ed; cursor: pointer; transition: background .2s, border-color .2s; }
+.theme-icon { display: block; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.2); transition: transform .22s, background .22s; }
+[data-theme="dark"] .theme-toggle { background: #353532; border-color: #4a4a46; }
+[data-theme="dark"] .theme-icon { transform: translateX(14px); background: #f5f5f0; box-shadow: inset -5px -3px 0 #353532; }
+.pagination-left { display: flex; align-items: center; gap: 10px; min-width: max-content; }
+.batch-actions { display: flex; align-items: center; gap: 8px; }
+.batch-actions[hidden] { display: none !important; }
+.btn-export { background: #111; border-color: #111; color: #fff; }
+.btn-export:hover { background: #292929; color: #fff; }
+#account-section .pagination { margin-left: auto; }
+.mail-modal .modal { height: min(760px, calc(100vh - 40px)); display: flex; flex-direction: column; }
+.mail-modal .modal-header, .mail-modal .modal-footer { flex: 0 0 auto; }
+.mail-modal .modal-body { flex: 1 1 auto; min-height: 0; max-height: none; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.mail-content iframe { overflow: hidden !important; }
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --black: #f4f4ef;
+  --white: #191918;
+  --gray-50: #111110;
+  --gray-100: #242422;
+  --gray-200: #333330;
+  --gray-300: #454541;
+  --gray-500: #a3a39c;
+  --gray-600: #bdbdb5;
+  --gray-700: #d0d0c8;
+  --gray-900: #f1f1ec;
+  --line: #343431;
+  --muted: #a0a099;
+}
+[data-theme="dark"] body { background-color: #111110; background-image: linear-gradient(#232321 1px, transparent 1px), linear-gradient(90deg, #232321 1px, transparent 1px), radial-gradient(circle at 50% 0, rgba(118,91,42,.15), transparent 34%); color: #efefe9; }
+[data-theme="dark"] .brand-mark, [data-theme="dark"] .btn-primary, [data-theme="dark"] .pagination button.active, [data-theme="dark"] .selected-count.is-active { background: #f0f0eb; border-color: #f0f0eb; color: #171716; }
+[data-theme="dark"] .main, [data-theme="dark"] .table-wrap, [data-theme="dark"] .table, [data-theme="dark"] .modal, [data-theme="dark"] .search-input, [data-theme="dark"] .back-btn, [data-theme="dark"] .pagination button, [data-theme="dark"] .per-page, [data-theme="dark"] .btn, [data-theme="dark"] .form-group textarea, [data-theme="dark"] .form-group input { background: #1a1a19; color: #efefe9; border-color: #353532; }
+[data-theme="dark"] .toolbar, [data-theme="dark"] .import-file-actions, [data-theme="dark"] .modal-footer, [data-theme="dark"] .mail-detail-header { background: #20201e; border-color: #353532; }
+[data-theme="dark"] .table th { background: #252523; color: #aaa9a2; }
+[data-theme="dark"] .table td { border-color: #30302d; }
+[data-theme="dark"] .table tr:hover td, [data-theme="dark"] #mail-table tbody tr:not(:has(.empty)):hover td { background: #242422; }
+[data-theme="dark"] .btn-export { background: #efefe9; border-color: #efefe9; color: #171716; }
+[data-theme="dark"] .btn-danger { color: #ff8c8c; border-color: #693d3d; }
+[data-theme="dark"] .mail-meta { border-color: #353532; }
+[data-theme="dark"] .loading-overlay { background: rgba(17,17,16,.72); }
+[data-theme="dark"] .mail-content iframe { background: #fff; }
+[data-theme="dark"] .footer a:hover { color: #fff; }
+
+@media (max-width: 760px) {
+  .header-actions { gap: 6px; }
+  .theme-toggle { flex: 0 0 auto; }
+  .pagination-wrap { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .pagination-left { width: 100%; justify-content: space-between; }
+  #account-section .pagination { margin-left: 0; }
+  .batch-actions .btn { padding-inline: 10px; }
+  [data-theme="dark"] #email-table tr, [data-theme="dark"] #mail-table tr { background: #1a1a19; border-color: #353532; }
+}
+
+body.modal-open { overflow: hidden !important; }

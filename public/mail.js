@@ -34,9 +34,18 @@
   const hideLoading = () => $('#loading-overlay').style.display = 'none'
 
   /* ---------- 模态框 ---------- */
-  const openModal = (id) => $(`#${id}`).style.display = 'flex'
-  const closeModal = (id) => $(`#${id}`).style.display = 'none'
-  const closeAllModals = () => $$('.modal-overlay').forEach(el => el.style.display = 'none')
+  const openModal = (id) => {
+    $(`#${id}`).style.display = 'flex'
+    document.body.classList.add('modal-open')
+  }
+  const closeModal = (id) => {
+    $(`#${id}`).style.display = 'none'
+    if (!$('.modal-overlay').some(el => el.style.display === 'flex')) document.body.classList.remove('modal-open')
+  }
+  const closeAllModals = () => {
+    $('.modal-overlay').forEach(el => el.style.display = 'none')
+    document.body.classList.remove('modal-open')
+  }
 
   /* ---------- localStorage ---------- */
   const getEmailData = () => JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEY)) || []
@@ -116,8 +125,10 @@
 
     const info = $('#pagination-info')
     if (info) {
-      info.innerHTML = `共 ${filteredIndexes.length} 条 <span class="selected-count${selectedCount ? ' is-active' : ''}">已选择 ${selectedCount} 个</span>`
+      info.innerHTML = `共 ${filteredIndexes.length} 条 <span class="selected-count${state.selectedItems.length ? ' is-active' : ''}">已选择 ${state.selectedItems.length} 个</span>`
     }
+    const batchActions = $('#batch-actions')
+    if (batchActions) batchActions.hidden = state.selectedItems.length === 0
   }
 
   const renderPagination = () => {
@@ -128,6 +139,7 @@
     const btns = $('#pagination-btns')
 
     info.innerHTML = `共 ${total} 条 <span class="selected-count${state.selectedItems.length ? ' is-active' : ''}">已选择 ${state.selectedItems.length} 个</span>`
+    $('#batch-actions').hidden = state.selectedItems.length === 0
 
     if (totalPages <= 1) {
       btns.innerHTML = ''
@@ -197,6 +209,39 @@
     render()
   }
 
+  const copyToClipboard = async (text) => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return
+    }
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.cssText = 'position:fixed;opacity:0;pointer-events:none;'
+    document.body.appendChild(textarea)
+    textarea.select()
+    const copied = document.execCommand('copy')
+    textarea.remove()
+    if (!copied) throw new Error('复制失败')
+  }
+
+  const exportSelectedAccounts = async () => {
+    const data = getEmailData()
+    const rows = state.selectedItems
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map(index => data[index])
+      .filter(Boolean)
+      .map(item => [item.email, item.password, item.clientId, item.refreshToken].join('----'))
+
+    if (!rows.length) return
+    try {
+      await copyToClipboard(rows.join('\n'))
+      showToast(`已复制 ${rows.length} 条账号，可直接粘贴导入`)
+    } catch (err) {
+      showToast(err.message || '复制失败，请检查浏览器权限')
+    }
+  }
+
   const batchDelete = () => {
     if (state.selectedItems.length === 0) {
       showToast('请先选择要删除的账号')
@@ -249,8 +294,10 @@
       const content = [pastedText, ...fileContents].filter(Boolean).join('\n')
       const lines = content.split(/\r?\n/)
       const data = getEmailData()
+      const existingEmails = new Set(data.map(item => String(item.email || '').trim().toLowerCase()))
       let count = 0
       let skipped = 0
+      let duplicates = 0
 
       lines.forEach(line => {
         const value = line.trim()
@@ -269,12 +316,21 @@
           return
         }
 
+        const emailKey = email.toLowerCase()
+        if (existingEmails.has(emailKey)) {
+          duplicates++
+          return
+        }
+
+        existingEmails.add(emailKey)
         data.push({ email, password, clientId, refreshToken })
         count++
       })
 
       if (count === 0) {
-        showToast(`没有可导入的有效账号，请检查分隔符（当前：${delimiter}）`)
+        showToast(duplicates > 0 && skipped === 0
+          ? `检测到 ${duplicates} 条重复账号，未重复导入`
+          : `没有可导入的有效账号，请检查分隔符（当前：${delimiter}）`)
         return
       }
 
@@ -284,7 +340,8 @@
       closeModal('import-modal')
       resetImportForm()
       render()
-      showToast(skipped > 0 ? `导入 ${count} 条，跳过 ${skipped} 条无效数据` : `导入成功，共 ${count} 条`)
+      const details = [duplicates ? `跳过 ${duplicates} 条重复账号` : '', skipped ? `跳过 ${skipped} 条无效数据` : ''].filter(Boolean).join('，')
+      showToast(`成功导入 ${count} 条${details ? `，${details}` : ''}`)
     } catch (err) {
       showToast(err.message || '读取文件失败')
     } finally {
@@ -411,13 +468,20 @@
       iframe.setAttribute('sandbox', '')
       iframe.setAttribute('referrerpolicy', 'no-referrer')
       iframe.srcdoc = item.html
-      iframe.style.cssText = 'width:100%;border:0;min-height:400px;'
+      iframe.setAttribute('scrolling', 'no')
+      iframe.style.cssText = 'width:100%;border:0;min-height:400px;overflow:hidden;display:block;'
       content.appendChild(iframe)
       iframe.addEventListener('load', () => {
         try {
-          const h = iframe.contentDocument?.body?.scrollHeight
-          if (h) iframe.style.height = h + 'px'
-        } catch (e) { /* 跨源/无 origin,忽略 */ }
+          const doc = iframe.contentDocument
+          const resize = () => {
+            const h = Math.max(doc?.body?.scrollHeight || 0, doc?.documentElement?.scrollHeight || 0, 400)
+            iframe.style.height = h + 'px'
+          }
+          resize()
+          doc?.querySelectorAll('img').forEach(img => img.addEventListener('load', resize, { once: true }))
+          if (window.ResizeObserver && doc?.documentElement) new ResizeObserver(resize).observe(doc.documentElement)
+        } catch (e) { /* 无法读取时保留安全的默认高度 */ }
       })
     } else {
       const pre = document.createElement('pre')
@@ -455,6 +519,8 @@
 
   /* ---------- 事件绑定 ---------- */
   const bindEvents = () => {
+    $('#theme-toggle').addEventListener('click', toggleTheme)
+
     // 搜索
     $('#search-input').addEventListener('input', e => {
       state.searchKeyword = e.target.value.trim()
@@ -475,6 +541,12 @@
           batchDelete()
           break
       }
+    })
+
+    $('#batch-actions').addEventListener('click', e => {
+      const action = e.target.closest('button[data-action]')?.dataset.action
+      if (action === 'export') exportSelectedAccounts()
+      if (action === 'delete') batchDelete()
     })
 
     // 账号表格操作
@@ -593,6 +665,15 @@
     })
 
   }
+
+  const applyTheme = (theme) => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('mailTheme', theme)
+    const toggle = $('#theme-toggle')
+    if (toggle) toggle.setAttribute('aria-label', theme === 'dark' ? '切换到明亮模式' : '切换到暗色模式')
+  }
+
+  const toggleTheme = () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark')
 
   /* ---------- 初始化 ---------- */
   const init = () => {
