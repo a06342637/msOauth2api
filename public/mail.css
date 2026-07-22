@@ -950,7 +950,7 @@ body::before {
 .footer-version { display: inline-flex; margin-left: 9px; padding-left: 9px; border-left: 1px solid #d7d7d2; color: #aaa; font-variant-numeric: tabular-nums; }
 
 
-/* v0.5.3 theme, selection actions and mail detail scrolling */
+/* v0.5.4 theme, selection actions and mail detail scrolling */
 .header-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .theme-toggle { width: 42px; height: 28px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: #f0f0ed; cursor: pointer; transition: background .2s, border-color .2s; }
 .theme-icon { display: block; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.2); transition: transform .22s, background .22s; }
@@ -1346,6 +1346,19 @@ button, input, textarea, select { font: inherit; }
 .validation-status[data-tone="warning"] { border-color: #e8c98a; background: #fffaf0; }
 .validation-status[data-tone="warning"] .validation-status-title { color: #8a5a05; }
 .validation-status-compact { margin-top: 10px; font-size: 12px; }
+.validation-status-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.validation-status-header .validation-status-title { min-width: 0; padding-top: 3px; }
+.validation-status-action { flex: 0 0 auto; white-space: nowrap; }
+@media (max-width: 560px) {
+  .validation-status-header { align-items: stretch; flex-wrap: wrap; }
+  .validation-status-action { margin-left: auto; }
+}
+
 
 [data-theme="dark"] .validation-status {
   border-color: #3b3b37;

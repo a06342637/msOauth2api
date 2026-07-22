@@ -217,16 +217,30 @@
   const setValidationStatus = (selector, options = {}) => {
     const status = $(selector)
     if (!status) return
-    const { tone = 'info', title = '', message = '', details = [] } = options
+    const { tone = 'info', title = '', message = '', details = [], action = null } = options
     status.hidden = false
     status.dataset.tone = tone
     status.replaceChildren()
 
-    if (title) {
-      const heading = document.createElement('strong')
-      heading.className = 'validation-status-title'
-      heading.textContent = title
-      status.appendChild(heading)
+    if (title || action) {
+      const header = document.createElement('div')
+      header.className = 'validation-status-header'
+      if (title) {
+        const heading = document.createElement('strong')
+        heading.className = 'validation-status-title'
+        heading.textContent = title
+        header.appendChild(heading)
+      }
+      if (action?.label && typeof action.onClick === 'function') {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = 'btn btn-sm validation-status-action'
+        button.textContent = action.label
+        if (action.title) button.title = action.title
+        button.addEventListener('click', action.onClick)
+        header.appendChild(button)
+      }
+      status.appendChild(header)
     }
     if (message) {
       const copy = document.createElement('p')
@@ -589,6 +603,39 @@
     if (!copied) throw new Error('复制失败')
   }
 
+  const createFailedAccountsCopyAction = entries => {
+    const rows = [...entries]
+      .sort((left, right) => Number(left?.lineNumber || 0) - Number(right?.lineNumber || 0))
+      .map(entry => typeof entry === 'string' ? entry : entry?.sourceLine)
+      .map(line => String(line || '').trim())
+      .filter(Boolean)
+
+    if (!rows.length) return null
+    const label = `复制失败账号（${rows.length}）`
+    return {
+      label,
+      title: '按原导入格式复制失败账号',
+      onClick: async event => {
+        const button = event.currentTarget
+        button.disabled = true
+        try {
+          await copyToClipboard(rows.join('\n'))
+          button.textContent = '已复制'
+          showToast(`已复制 ${rows.length} 条导入失败的账号，可直接粘贴修改`)
+          setTimeout(() => {
+            if (!button.isConnected) return
+            button.disabled = false
+            button.textContent = label
+          }, 1400)
+        } catch (error) {
+          button.disabled = false
+          button.textContent = label
+          showToast(error.message || '复制失败，请检查浏览器权限')
+        }
+      }
+    }
+  }
+
   const exportSelectedAccounts = async () => {
     const data = getEmailData()
     const rows = state.selectedItems
@@ -666,6 +713,7 @@
     const existingEmails = new Set(existingAccounts.map(item => String(item.email || '').trim().toLowerCase()).filter(Boolean))
     const candidates = []
     const invalidRows = []
+    const invalidAccounts = []
     let duplicates = 0
 
     lines.forEach((line, index) => {
@@ -675,6 +723,7 @@
       const fields = value.split(delimiter).map(field => field.trim())
       if (fields.length < 4) {
         invalidRows.push(rowLabel + '：字段不足，应为邮箱、密码/Key、Client ID、Refresh Token')
+        invalidAccounts.push({ lineNumber: index + 1, sourceLine: value })
         return
       }
 
@@ -687,6 +736,7 @@
       else if (!refreshToken || refreshToken.length > 20000) reason = 'Refresh Token 为空或过长'
       if (reason) {
         invalidRows.push(rowLabel + '：' + reason)
+        invalidAccounts.push({ lineNumber: index + 1, sourceLine: value })
         return
       }
 
@@ -696,10 +746,10 @@
         return
       }
       existingEmails.add(emailKey)
-      candidates.push({ email, password, clientId, refreshToken, delimiter, lineNumber: index + 1 })
+      candidates.push({ email, password, clientId, refreshToken, delimiter, lineNumber: index + 1, sourceLine: value })
     })
 
-    return { candidates, invalidRows, duplicates }
+    return { candidates, invalidRows, invalidAccounts, duplicates }
   }
 
   const validateImportCandidates = async (candidates, options = {}) => {
@@ -803,7 +853,8 @@
           tone: parsed.invalidRows.length ? 'error' : 'warning',
           title: '没有可验证的账号',
           message: message + '，未导入任何数据。',
-          details: parsed.invalidRows
+          details: parsed.invalidRows,
+          action: createFailedAccountsCopyAction(parsed.invalidAccounts)
         })
         showToast(message + '，未导入')
         return
@@ -842,7 +893,7 @@
           return
         }
         latestEmails.add(emailKey)
-        const { lineNumber, ...account } = result.candidate
+        const { lineNumber, sourceLine, ...account } = result.candidate
         data.push({ ...account, refreshToken: result.refreshToken })
         importedCount++
       })
@@ -867,6 +918,11 @@
         ...credentialFailures.map(result => `第 ${result.candidate.lineNumber} 行 ${result.candidate.email}：${result.error.message}`),
         ...serviceFailures.map(result => `第 ${result.candidate.lineNumber} 行 ${result.candidate.email}：${result.error.message}`)
       ]
+      const failedAccounts = [
+        ...parsed.invalidAccounts,
+        ...credentialFailures.map(result => result.candidate),
+        ...serviceFailures.map(result => result.candidate)
+      ]
       const hasIssues = duplicateCount > 0 || parsed.invalidRows.length > 0 || credentialFailures.length > 0 || serviceFailures.length > 0
 
       if (importedCount > 0 && !hasIssues) {
@@ -880,7 +936,8 @@
         tone: importedCount > 0 ? 'warning' : 'error',
         title: importedCount > 0 ? '有效账号已导入，部分数据被跳过' : '凭证验证未通过，未导入账号',
         message: summary + '。无效、过期或无法完成验证的账号均未保存。',
-        details: failureDetails
+        details: failureDetails,
+        action: createFailedAccountsCopyAction(failedAccounts)
       })
       showToast(summary)
     } catch (error) {
@@ -1699,7 +1756,7 @@
     }
 
     console.log('%c感谢您使用本项目！', 'color: #666; font-size: 11px;')
-    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.5.3', 'color: #007BFF; font-size: 12px;')
+    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.5.4', 'color: #007BFF; font-size: 12px;')
   }
 
   document.addEventListener('DOMContentLoaded', init)
