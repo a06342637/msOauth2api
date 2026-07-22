@@ -388,7 +388,6 @@
             <div class="actions">
               <button type="button" class="btn btn-sm" data-action="edit">编辑</button>
               <button type="button" class="btn btn-sm" data-action="inbox">收件箱</button>
-              <button type="button" class="btn btn-sm" data-action="junk">垃圾箱</button>
               <button type="button" class="btn btn-sm btn-danger" data-action="delete">删除</button>
             </div>
           </td>
@@ -1756,7 +1755,7 @@
     }
 
     console.log('%c感谢您使用本项目！', 'color: #666; font-size: 11px;')
-    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.5.4', 'color: #007BFF; font-size: 12px;')
+    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.5.5', 'color: #007BFF; font-size: 12px;')
   }
 
   document.addEventListener('DOMContentLoaded', init)
