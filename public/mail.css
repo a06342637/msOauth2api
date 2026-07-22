@@ -1191,3 +1191,110 @@ button, input, textarea, select { font: inherit; }
 .btn:disabled { cursor: wait; opacity: .65; transform: none !important; }
 [data-theme="dark"] .pagination-ellipsis { color: #aaa9a2; }
 [data-theme="dark"] #mail-table tbody tr[data-mail-index]:focus-visible td { background: #292927; }
+
+
+/* Fast mail loading states and dark row focus correction */
+.mail-list-status { color: #777772; font-weight: 600; }
+#mail-table[aria-busy="true"] tbody:not(:has(.mail-skeleton-row)) { opacity: .72; }
+.mail-skeleton-row { pointer-events: none; }
+.mail-skeleton-row td { height: 58px; }
+.skeleton-line {
+  display: block;
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ecece8 20%, #f8f8f5 45%, #ecece8 70%);
+  background-size: 240% 100%;
+  animation: mail-skeleton-wave 1.25s ease-in-out infinite;
+}
+.skeleton-address { max-width: 82%; }
+.skeleton-subject { max-width: 92%; }
+.skeleton-date { max-width: 72%; }
+.skeleton-action { width: 42px; height: 28px; margin-inline: auto; border-radius: 9px; }
+@keyframes mail-skeleton-wave { to { background-position: -240% 0; } }
+
+.mail-load-error { display: table-cell !important; }
+.mail-load-error strong, .mail-load-error span, .mail-load-error small { display: block; }
+.mail-load-error strong { margin-bottom: 6px; color: #333; }
+.mail-load-error span { color: #777; }
+.mail-load-error small { margin-top: 8px; color: #999; font-weight: 400; }
+
+.mail-content-loading,
+.mail-content-error {
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 28px;
+  text-align: center;
+  color: #666;
+}
+.mail-content-loading strong { color: #333; }
+.mail-body-spinner {
+  width: 28px;
+  height: 28px;
+  border: 2px solid #deded9;
+  border-top-color: #292927;
+  border-radius: 50%;
+  animation: spin .75s linear infinite;
+}
+.mail-preview {
+  max-width: 620px;
+  margin-top: 4px;
+  color: #8a8a85;
+  font-size: 13px;
+  line-height: 1.65;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.mail-content-error p { max-width: 620px; color: #b34a4a; overflow-wrap: anywhere; }
+.mail-content pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mail-content .mail-frame {
+  display: block;
+  width: 100%;
+  min-height: 320px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+/* The later light focus rule previously turned a focused message row white in dark mode. */
+[data-theme="dark"] #mail-table tbody tr[data-mail-index]:focus-within td,
+[data-theme="dark"] #mail-table tbody tr[data-mail-index]:focus-visible td,
+[data-theme="dark"] #mail-table tbody tr[data-mail-index]:active td {
+  background: #2a2a27;
+  color: #f0f0ea;
+}
+[data-theme="dark"] #mail-table tbody tr[data-mail-index]:focus-within .mail-address,
+[data-theme="dark"] #mail-table tbody tr[data-mail-index]:focus-within .mail-date,
+[data-theme="dark"] #mail-table tbody tr[data-mail-index]:focus-visible .mail-address,
+[data-theme="dark"] #mail-table tbody tr[data-mail-index]:focus-visible .mail-date {
+  color: #d0d0c8;
+}
+[data-theme="dark"] .mail-list-status { color: #c1c1ba; }
+[data-theme="dark"] .skeleton-line {
+  background-image: linear-gradient(90deg, #292927 20%, #383834 45%, #292927 70%);
+}
+[data-theme="dark"] .mail-load-error strong,
+[data-theme="dark"] .mail-content-loading strong { color: #ecece6; }
+[data-theme="dark"] .mail-load-error span,
+[data-theme="dark"] .mail-load-error small,
+[data-theme="dark"] .mail-content-loading,
+[data-theme="dark"] .mail-preview { color: #aaa9a2; }
+[data-theme="dark"] .mail-body-spinner { border-color: #44443f; border-top-color: #efefe9; }
+[data-theme="dark"] .mail-content-error p { color: #ff9d9d; }
+
+@media (max-width: 760px) {
+  .mail-skeleton-row td { height: auto; }
+  .mail-skeleton-row .skeleton-line { margin-block: 7px; }
+  .skeleton-action { margin-inline: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line, .mail-body-spinner { animation: none; }
+}

@@ -1,7 +1,7 @@
 'use strict'
 
 const { acceptRequest, getText, isEmail, requestSource, sendHandlerError, verifyPassword, PublicError } = require('../lib/api-utils')
-const { loadMailbox } = require('../lib/mail-service')
+const { loadMessage } = require('../lib/mail-service')
 
 module.exports = async (req, res) => {
   if (!acceptRequest(req, res, ['GET', 'POST'])) return
@@ -14,20 +14,15 @@ module.exports = async (req, res) => {
     const clientId = getText(source, 'client_id', { required: true, max: 200 })
     const email = getText(source, 'email', { required: true, max: 320 })
     const mailbox = getText(source, 'mailbox', { required: true, max: 20 })
-    const summary = getText(source, 'summary', { defaultValue: 'false', max: 5 }).toLowerCase()
-    if (!isEmail(email)) throw new PublicError('Invalid email address')
-    if (!['true', 'false', '1', '0'].includes(summary)) throw new PublicError('Invalid summary value')
+    const provider = getText(source, 'provider', { required: true, max: 10 }).toLowerCase()
+    const id = getText(source, 'id', { required: true, max: 1000 })
 
-    const messages = await loadMailbox({
-      refreshToken,
-      clientId,
-      email,
-      mailbox,
-      limit: 100,
-      summaryOnly: summary === 'true' || summary === '1'
-    })
-    return res.status(200).json(messages)
+    if (!isEmail(email)) throw new PublicError('Invalid email address')
+    if (!['graph', 'imap'].includes(provider)) throw new PublicError('Invalid message provider')
+
+    const message = await loadMessage({ refreshToken, clientId, email, mailbox, provider, id })
+    return res.status(200).json(message)
   } catch (error) {
-    return sendHandlerError(res, error, '读取邮件失败')
+    return sendHandlerError(res, error, '读取邮件正文失败')
   }
 }

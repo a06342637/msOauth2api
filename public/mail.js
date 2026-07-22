@@ -11,7 +11,9 @@
     MAIL_ITEMS_PER_PAGE: 10,
     DEFAULT_ITEMS_PER_PAGE: 10,
     API_BASE: '/api/mail-all',
+    MAIL_DETAIL_API: '/api/mail-detail',
     MAIL_REQUEST_TIMEOUT: 30000,
+    MAIL_DETAIL_TIMEOUT: 20000,
     MAX_IMPORT_SIZE: 5 * 1024 * 1024,
     MAX_IMPORT_LINES: 10000
   }
@@ -28,6 +30,11 @@
     editingAccountIndex: null,
     mailRequestController: null,
     mailRequestId: 0,
+    mailListLoading: false,
+    mailDetailCache: new Map(),
+    mailDetailRequests: new Map(),
+    mailDetailViewId: 0,
+    mailPrefetchTimer: null,
     importing: false
   }
 
@@ -35,6 +42,24 @@
   const queryAll = (sel, ctx = document) => [...ctx.querySelectorAll(sel)]
   let toastTimer = null
   let lastFocusedElement = null
+
+  const clearMailContent = () => {
+    const content = $('#mail-modal-content')
+    const iframe = content?.querySelector('iframe')
+    iframe?._mailResizeObserver?.disconnect?.()
+    iframe?._mailResizeTimers?.forEach?.(timer => clearTimeout(timer))
+    content?.replaceChildren()
+  }
+
+  const abortMailDetailRequests = () => {
+    clearTimeout(state.mailPrefetchTimer)
+    state.mailPrefetchTimer = null
+    state.mailDetailRequests.forEach(entry => entry.controller.abort())
+    state.mailDetailRequests.clear()
+    state.mailDetailCache.clear()
+    state.mailDetailViewId++
+    clearMailContent()
+  }
 
   /* ---------- Loading ---------- */
   const showLoading = () => {
@@ -63,7 +88,7 @@
     if (!modal) return
     modal.style.display = 'none'
     modal.setAttribute('aria-hidden', 'true')
-    if (id === 'mail-modal') $('#mail-modal-content')?.replaceChildren()
+    if (id === 'mail-modal') { state.mailDetailViewId++; clearMailContent() }
     if (![...document.querySelectorAll('.modal-overlay')].some(el => el.style.display === 'flex')) {
       document.body.classList.remove('modal-open')
       lastFocusedElement?.focus?.()
@@ -72,7 +97,8 @@
   }
   const closeAllModals = () => {
     document.querySelectorAll('.modal-overlay').forEach(el => { el.style.display = 'none'; el.setAttribute('aria-hidden', 'true') })
-    $('#mail-modal-content')?.replaceChildren()
+    state.mailDetailViewId++
+    clearMailContent()
     document.body.classList.remove('modal-open')
     lastFocusedElement?.focus?.()
     lastFocusedElement = null
@@ -469,15 +495,57 @@
   }
 
   /* ---------- 邮件列表 ---------- */
-  const loadMailList = async (refreshToken, clientId, email, mailbox) => {
+  const renderMailSkeleton = () => {
+    const tbody = $('#mail-table tbody')
+    tbody.innerHTML = Array.from({ length: 6 }, (_, rowIndex) => `
+      <tr class="mail-skeleton-row" aria-hidden="true">
+        <td><span class="skeleton-line skeleton-address"></span></td>
+        <td><span class="skeleton-line skeleton-address"></span></td>
+        <td><span class="skeleton-line skeleton-subject"></span></td>
+        <td><span class="skeleton-line skeleton-date"></span></td>
+        <td><span class="skeleton-line skeleton-action"></span></td>
+      </tr>
+    `).join('')
+    $('#mail-pagination-btns').replaceChildren()
+  }
+
+  const renderMailLoadError = message => {
+    const tbody = $('#mail-table tbody')
+    tbody.innerHTML = '<tr><td colspan="5" class="empty mail-load-error"><strong>邮件加载失败</strong><span></span><small>请点击右上角“刷新邮件”重试</small></td></tr>'
+    $('.mail-load-error span', tbody).textContent = message || '请稍后重试'
+    $('#mail-pagination-btns').replaceChildren()
+  }
+
+  const setMailListLoading = (loading, initial = false) => {
+    state.mailListLoading = loading
+    const table = $('#mail-table')
+    const refreshButton = $('#refresh-mails')
+    const status = $('#mail-list-status')
+    table?.setAttribute('aria-busy', String(loading))
+    if (refreshButton) {
+      refreshButton.disabled = loading
+      refreshButton.textContent = loading ? '↻ 正在刷新…' : '↻ 刷新邮件'
+    }
+    if (status) status.textContent = loading ? ' · 正在加载…' : ''
+    if (loading && initial) renderMailSkeleton()
+  }
+
+  const loadMailList = async (refreshToken, clientId, email, mailbox, options = {}) => {
+    const isRefresh = options.refresh === true
     state.mailRequestController?.abort()
     const controller = new AbortController()
     const requestId = ++state.mailRequestId
     state.mailRequestController = controller
+
+    abortMailDetailRequests()
     state.currentMailbox = { refreshToken, clientId, email, mailbox }
-    state.currentMailPage = 1
+    if (!isRefresh) {
+      state.mailData = []
+      state.currentMailPage = 1
+    }
     $('#current-mailbox-label').textContent = email + ' · ' + (mailbox === 'Junk' ? '垃圾箱' : '收件箱')
-    showLoading()
+    showMailSection()
+    setMailListLoading(true, state.mailData.length === 0)
 
     let timedOut = false
     const timeout = setTimeout(() => {
@@ -489,7 +557,8 @@
       const response = await fetch(CONFIG.API_BASE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: refreshToken, client_id: clientId, email, mailbox }),
+        cache: 'no-store',
+        body: JSON.stringify({ refresh_token: refreshToken, client_id: clientId, email, mailbox, summary: true }),
         signal: controller.signal
       })
       let data
@@ -499,16 +568,20 @@
       if (requestId !== state.mailRequestId) return
 
       state.mailData = data
-      showMailSection()
       renderMailTable()
+      if (isRefresh) showToast('邮件列表已刷新')
     } catch (error) {
       if (error.name === 'AbortError' && !timedOut) return
-      if (requestId === state.mailRequestId) showToast(timedOut ? '邮件加载超时，请稍后重试' : (error.message || '加载失败'))
+      if (requestId === state.mailRequestId) {
+        const message = timedOut ? '邮件加载超时，请稍后重试' : (error.message || '加载失败')
+        if (state.mailData.length === 0) renderMailLoadError(message)
+        showToast(message)
+      }
     } finally {
       clearTimeout(timeout)
       if (requestId === state.mailRequestId) {
         state.mailRequestController = null
-        hideLoading()
+        setMailListLoading(false)
       }
     }
   }
@@ -527,6 +600,8 @@
     state.mailRequestId++
     state.mailRequestController?.abort()
     state.mailRequestController = null
+    setMailListLoading(false)
+    abortMailDetailRequests()
     hideLoading()
     queryAll('.section').forEach(s => s.classList.remove('active'))
     $('#account-section').classList.add('active')
@@ -592,7 +667,13 @@
     btns.innerHTML = html
   }
 
-  const syncMailFrameTheme = (iframe) => {
+  const mailCacheKey = item => item?.provider && item?.id ? `${item.provider}:${item.id}` : ''
+  const hasMailBody = item => item && (
+    Object.prototype.hasOwnProperty.call(item, 'html') ||
+    Object.prototype.hasOwnProperty.call(item, 'text')
+  )
+
+  const syncMailFrameTheme = iframe => {
     if (!iframe) return
     const isDark = document.documentElement.dataset.theme === 'dark'
     iframe.classList.toggle('mail-frame-dark', isDark)
@@ -607,13 +688,190 @@
         ;(doc.head || doc.documentElement).appendChild(style)
       }
       // 外层反色让白底邮件变暗；媒体元素再次反色，避免图片和视频颜色失真。
-      const layoutCss = 'html, body { max-width: 100% !important; overflow-x: hidden !important; } img, picture, video, canvas, svg, table { max-width: 100% !important; } img, video { height: auto !important; } pre { white-space: pre-wrap !important; overflow-wrap: anywhere !important; }'
+      const layoutCss = 'html { color-scheme: light !important; } html, body { max-width: 100% !important; overflow-x: hidden !important; } img, picture, video, canvas, svg, table { max-width: 100% !important; } img, video { height: auto !important; } a, pre { overflow-wrap: anywhere !important; } pre { white-space: pre-wrap !important; }'
       const darkCss = 'img, picture, video, canvas { filter: invert(1) hue-rotate(180deg) !important; }'
       style.textContent = isDark ? `${layoutCss} ${darkCss}` : layoutCss
     } catch (_) { /* 邮件正文无法访问时仍保留 iframe 外层暗色处理 */ }
   }
 
-  const viewMailDetail = (index) => {
+  const fetchMailDetail = item => {
+    if (hasMailBody(item)) return Promise.resolve(item)
+    const key = mailCacheKey(item)
+    if (!key || !state.currentMailbox) {
+      return Promise.resolve({ ...item, text: item?.preview || '', html: '' })
+    }
+    if (state.mailDetailCache.has(key)) return Promise.resolve(state.mailDetailCache.get(key))
+    if (state.mailDetailRequests.has(key)) return state.mailDetailRequests.get(key).promise
+
+    const controller = new AbortController()
+    let timedOut = false
+    const timeout = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, CONFIG.MAIL_DETAIL_TIMEOUT)
+    const box = { ...state.currentMailbox }
+
+    const promise = (async () => {
+      try {
+        const response = await fetch(CONFIG.MAIL_DETAIL_API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify({
+            refresh_token: box.refreshToken,
+            client_id: box.clientId,
+            email: box.email,
+            mailbox: box.mailbox,
+            provider: item.provider,
+            id: item.id
+          }),
+          signal: controller.signal
+        })
+        let data
+        try { data = await response.json() } catch (_) { throw new Error('邮件正文接口返回格式错误') }
+        if (!response.ok) throw new Error(data?.error || ('请求失败（' + response.status + '）'))
+        if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('邮件正文接口返回格式错误')
+
+        const detail = { ...item, ...data }
+        state.mailDetailCache.set(key, detail)
+        const currentIndex = state.mailData.findIndex(entry => mailCacheKey(entry) === key)
+        if (currentIndex >= 0) state.mailData[currentIndex] = detail
+        return detail
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          throw new Error(timedOut ? '邮件正文加载超时，请稍后重试' : '邮件正文加载已取消')
+        }
+        throw error
+      } finally {
+        clearTimeout(timeout)
+        if (state.mailDetailRequests.get(key)?.controller === controller) state.mailDetailRequests.delete(key)
+      }
+    })()
+
+    state.mailDetailRequests.set(key, { controller, promise })
+    return promise
+  }
+
+  const showMailContentLoading = preview => {
+    clearMailContent()
+    const content = $('#mail-modal-content')
+    const loading = document.createElement('div')
+    loading.className = 'mail-content-loading'
+    loading.setAttribute('role', 'status')
+    loading.innerHTML = '<span class="mail-body-spinner" aria-hidden="true"></span><strong>正在加载邮件正文…</strong>'
+    if (preview) {
+      const previewNode = document.createElement('p')
+      previewNode.className = 'mail-preview'
+      previewNode.textContent = preview
+      loading.appendChild(previewNode)
+    }
+    content.appendChild(loading)
+  }
+
+  const renderMailContent = item => {
+    clearMailContent()
+    const content = $('#mail-modal-content')
+
+    if (item.html) {
+      // 用 sandbox iframe 隔离渲染邮件 HTML，阻止脚本访问 localStorage 等父页面资源。
+      const iframe = document.createElement('iframe')
+      iframe.className = 'mail-frame'
+      iframe.setAttribute('sandbox', 'allow-same-origin')
+      iframe.setAttribute('title', '邮件正文')
+      iframe.setAttribute('referrerpolicy', 'no-referrer')
+      iframe.setAttribute('scrolling', 'no')
+      iframe._mailResizeTimers = []
+      syncMailFrameTheme(iframe)
+
+      let resizeFrame = 0
+      let observedDocument = null
+      const resize = () => {
+        cancelAnimationFrame(resizeFrame)
+        resizeFrame = requestAnimationFrame(() => {
+          if (!iframe.isConnected) return
+          try {
+            const doc = iframe.contentDocument
+            const height = Math.max(doc?.body?.scrollHeight || 0, doc?.documentElement?.scrollHeight || 0, 320)
+            if (Math.abs((parseFloat(iframe.style.height) || 0) - height) > 1) iframe.style.height = height + 'px'
+          } catch (_) {}
+        })
+      }
+      const initialize = () => {
+        if (!iframe.isConnected) return
+        try {
+          const doc = iframe.contentDocument
+          if (!doc) return
+          syncMailFrameTheme(iframe)
+          if (observedDocument !== doc) {
+            observedDocument = doc
+            iframe._mailResizeObserver?.disconnect?.()
+            if ('ResizeObserver' in window) {
+              iframe._mailResizeObserver = new ResizeObserver(resize)
+              if (doc.documentElement) iframe._mailResizeObserver.observe(doc.documentElement)
+              if (doc.body) iframe._mailResizeObserver.observe(doc.body)
+            }
+            doc.querySelectorAll('img').forEach(image => {
+              image.decoding = 'async'
+              image.addEventListener('load', resize, { once: true })
+              image.addEventListener('error', resize, { once: true })
+            })
+          }
+          resize()
+        } catch (_) { /* 无法读取时保留安全的默认高度 */ }
+      }
+
+      iframe.addEventListener('load', initialize)
+      iframe.srcdoc = item.html
+      content.appendChild(iframe)
+      ;[0, 40, 160, 700].forEach(delay => {
+        iframe._mailResizeTimers.push(setTimeout(initialize, delay))
+      })
+    } else {
+      const pre = document.createElement('pre')
+      pre.textContent = item.text || item.preview || '（邮件正文为空）'
+      content.appendChild(pre)
+    }
+  }
+
+  const loadMailDetailIntoModal = async (index, viewId) => {
+    const item = state.mailData[index]
+    if (!item) return
+    try {
+      const detail = await fetchMailDetail(item)
+      if (viewId !== state.mailDetailViewId || $('#mail-modal').style.display !== 'flex') return
+      await new Promise(resolve => requestAnimationFrame(resolve))
+      if (viewId === state.mailDetailViewId) renderMailContent(detail)
+    } catch (error) {
+      if (viewId !== state.mailDetailViewId || $('#mail-modal').style.display !== 'flex') return
+      clearMailContent()
+      const content = $('#mail-modal-content')
+      const errorBox = document.createElement('div')
+      errorBox.className = 'mail-content-error'
+      const message = document.createElement('p')
+      message.textContent = error.message || '邮件正文加载失败'
+      const retry = document.createElement('button')
+      retry.type = 'button'
+      retry.className = 'btn btn-sm'
+      retry.textContent = '重新加载'
+      retry.addEventListener('click', () => {
+        const key = mailCacheKey(state.mailData[index])
+        if (key) state.mailDetailCache.delete(key)
+        const nextViewId = ++state.mailDetailViewId
+        showMailContentLoading(state.mailData[index]?.preview)
+        loadMailDetailIntoModal(index, nextViewId)
+      })
+      errorBox.append(message, retry)
+      content.appendChild(errorBox)
+    }
+  }
+
+  const prefetchMailDetail = index => {
+    const item = state.mailData[index]
+    if (!item || hasMailBody(item) || !mailCacheKey(item)) return
+    fetchMailDetail(item).catch(() => {})
+  }
+
+  const viewMailDetail = index => {
     const item = state.mailData[index]
     if (!item) return
 
@@ -622,46 +880,10 @@
     $('#mail-modal-recipient').textContent = item.to || state.currentMailbox?.email || '未知收件人'
     $('#mail-modal-date').textContent = formatMailDate(item.date)
 
-    const content = $('#mail-modal-content')
-    content.replaceChildren()
-
-    if (item.html) {
-      // 用 sandbox iframe 隔离渲染邮件 HTML，阻止脚本访问 localStorage 等父页面资源
-      const iframe = document.createElement('iframe')
-      iframe.setAttribute('sandbox', 'allow-same-origin')
-      iframe.setAttribute('title', '邮件正文')
-      iframe.setAttribute('referrerpolicy', 'no-referrer')
-      iframe.srcdoc = item.html
-      iframe.setAttribute('scrolling', 'no')
-      iframe.style.cssText = 'width:100%;border:0;min-height:400px;overflow:hidden;display:block;'
-      content.appendChild(iframe)
-      iframe.addEventListener('load', () => {
-        try {
-          const doc = iframe.contentDocument
-          syncMailFrameTheme(iframe)
-          let resizeFrame = 0
-          const resize = () => {
-            cancelAnimationFrame(resizeFrame)
-            resizeFrame = requestAnimationFrame(() => {
-              const h = Math.max(doc?.body?.scrollHeight || 0, doc?.documentElement?.scrollHeight || 0, 400)
-              iframe.style.height = h + 'px'
-            })
-          }
-          resize()
-          doc?.querySelectorAll('img').forEach(img => img.addEventListener('load', resize, { once: true }))
-          if ('ResizeObserver' in window && doc?.documentElement) new ResizeObserver(resize).observe(doc.documentElement)
-          setTimeout(resize, 250)
-          setTimeout(resize, 1000)
-        } catch (e) { /* 无法读取时保留安全的默认高度 */ }
-      })
-    } else {
-      const pre = document.createElement('pre')
-      pre.textContent = item.text || ''
-      pre.style.cssText = 'white-space:pre-wrap;word-wrap:break-word;margin:0;'
-      content.appendChild(pre)
-    }
-
+    const viewId = ++state.mailDetailViewId
+    showMailContentLoading(item.preview)
     openModal('mail-modal')
+    loadMailDetailIntoModal(index, viewId)
   }
 
   /* ---------- 文件和文件夹选择 ---------- */
@@ -803,8 +1025,27 @@
       if (!tr) return
       viewMailDetail(Number(tr.dataset.mailIndex))
     }
-    $('#mail-table tbody').addEventListener('click', e => openMailRow(e.target))
-    $('#mail-table tbody').addEventListener('keydown', e => {
+    const mailTableBody = $('#mail-table tbody')
+    const scheduleMailPrefetch = (target, delay = 120) => {
+      const row = target.closest('tr[data-mail-index]')
+      if (!row) return
+      clearTimeout(state.mailPrefetchTimer)
+      state.mailPrefetchTimer = setTimeout(() => prefetchMailDetail(Number(row.dataset.mailIndex)), delay)
+    }
+    mailTableBody.addEventListener('pointerdown', e => scheduleMailPrefetch(e.target, 0))
+    mailTableBody.addEventListener('pointerover', e => {
+      const row = e.target.closest('tr[data-mail-index]')
+      if (!row || row.contains(e.relatedTarget)) return
+      scheduleMailPrefetch(row)
+    })
+    mailTableBody.addEventListener('pointerout', e => {
+      const row = e.target.closest('tr[data-mail-index]')
+      if (!row || row.contains(e.relatedTarget)) return
+      clearTimeout(state.mailPrefetchTimer)
+    })
+    mailTableBody.addEventListener('focusin', e => scheduleMailPrefetch(e.target, 80))
+    mailTableBody.addEventListener('click', e => openMailRow(e.target))
+    mailTableBody.addEventListener('keydown', e => {
       if (e.target.closest('button')) return
       if (e.key !== 'Enter' && e.key !== ' ') return
       e.preventDefault()
@@ -824,7 +1065,7 @@
     $('#back-btn').addEventListener('click', showAccountSection)
     $('#refresh-mails').addEventListener('click', () => {
       const box = state.currentMailbox
-      if (box) loadMailList(box.refreshToken, box.clientId, box.email, box.mailbox)
+      if (box && !state.mailListLoading) loadMailList(box.refreshToken, box.clientId, box.email, box.mailbox, { refresh: true })
     })
 
     // 编辑账号弹窗

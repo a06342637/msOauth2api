@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>邮箱系统</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="stylesheet" href="/mail.css">
   <script>
     ;(() => {
@@ -88,7 +89,7 @@
         <div class="mail-section">
           <div class="mail-header">
             <button type="button" class="back-btn" id="back-btn">← 返回账号</button>
-            <div class="mail-heading-copy"><span class="eyebrow">MESSAGES</span><h2>邮件列表</h2><p id="current-mailbox-label" aria-live="polite">查看当前邮箱中的邮件</p></div>
+            <div class="mail-heading-copy"><span class="eyebrow">MESSAGES</span><h2>邮件列表</h2><p aria-live="polite"><span id="current-mailbox-label">查看当前邮箱中的邮件</span><span id="mail-list-status" class="mail-list-status" role="status"></span></p></div>
             <button type="button" class="btn btn-primary mail-refresh-btn" id="refresh-mails">↻ 刷新邮件</button>
           </div>
 
