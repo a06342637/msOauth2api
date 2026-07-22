@@ -73,14 +73,16 @@
     content?.replaceChildren()
   }
 
-  const abortMailDetailRequests = () => {
+  const abortMailDetailRequests = ({ clearCache = false } = {}) => {
     state.mailDetailContextId++
     clearTimeout(state.mailPrefetchTimer)
     state.mailPrefetchTimer = null
     state.mailPrefetchActive = 0
     state.mailDetailRequests.forEach(entry => entry.controller.abort())
     state.mailDetailRequests.clear()
-    state.mailDetailCache.clear()
+    // 已完成的正文由有界 LRU 缓存管理。刷新列表或暂时返回账号页时保留它，
+    // 再次打开同一封邮件无需重新请求；仅在明确要求时才全部清空。
+    if (clearCache) state.mailDetailCache.clear()
     state.mailDetailViewId++
     clearMailContent()
   }
@@ -1041,43 +1043,71 @@
       controller.abort()
     }, CONFIG.MAIL_REQUEST_TIMEOUT)
 
-    const fetchMailbox = async targetMailbox => {
+    try {
+      const folders = mailbox === 'INBOX' ? ['INBOX', 'Junk'] : [mailbox]
       const response = await fetch(CONFIG.API_BASE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-store',
-        body: JSON.stringify({ refresh_token: refreshToken, client_id: clientId, email, mailbox: targetMailbox, summary: true }),
+        body: JSON.stringify({
+          refresh_token: refreshToken,
+          client_id: clientId,
+          email,
+          mailbox,
+          summary: true,
+          include_junk: folders.length > 1
+        }),
         signal: controller.signal
       })
-      let data
-      try { data = await response.json() } catch (_) { throw new Error('邮件接口返回格式错误') }
+      let payload
+      try { payload = await response.json() } catch (_) { throw new Error('邮件接口返回格式错误') }
       if (!response.ok) {
         const fallback = response.status === 401
           ? 'Client ID 或 Refresh Token 不正确、已过期或已失效，请编辑账号后重新验证'
           : ('请求失败（' + response.status + '）')
-        throw new Error(credentialApiMessage(response.status, data?.error, fallback))
+        throw new Error(credentialApiMessage(response.status, payload?.error, fallback))
       }
-      if (!Array.isArray(data)) throw new Error('邮件接口返回格式错误')
-      const validData = data.map(item => normalizeMailSummary(item, targetMailbox)).filter(Boolean)
-      if (data.length > 0 && validData.length === 0) throw new Error('邮件接口返回格式错误')
-      return { mailbox: targetMailbox, data: validData }
-    }
-
-    try {
-      const folders = mailbox === 'INBOX' ? ['INBOX', 'Junk'] : [mailbox]
-      const settled = await Promise.allSettled(folders.map(fetchMailbox))
       if (controller.signal.aborted) {
         const abortError = new Error('邮件加载已取消')
         abortError.name = 'AbortError'
         throw abortError
       }
 
-      const primary = settled[0]
-      if (primary?.status === 'rejected') throw primary.reason
-      const successes = settled.filter(result => result.status === 'fulfilled').map(result => result.value)
-      const failures = settled
-        .map((result, index) => result.status === 'rejected' ? { mailbox: folders[index], error: result.reason } : null)
-        .filter(Boolean)
+      let rawMailboxes
+      let rawErrors
+      if (folders.length === 1) {
+        if (!Array.isArray(payload)) throw new Error('邮件接口返回格式错误')
+        rawMailboxes = [{ mailbox, messages: payload }]
+        rawErrors = []
+      } else {
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !Array.isArray(payload.mailboxes) || !Array.isArray(payload.errors)) {
+          throw new Error('邮件接口返回格式错误')
+        }
+        rawMailboxes = payload.mailboxes
+        rawErrors = payload.errors
+      }
+
+      const successes = []
+      const returnedFolders = new Set()
+      rawMailboxes.forEach(result => {
+        const targetMailbox = result?.mailbox
+        if (!folders.includes(targetMailbox) || returnedFolders.has(targetMailbox) || !Array.isArray(result?.messages)) {
+          throw new Error('邮件接口返回格式错误')
+        }
+        const validData = result.messages.map(item => normalizeMailSummary(item, targetMailbox)).filter(Boolean)
+        if (result.messages.length > 0 && validData.length === 0) throw new Error('邮件接口返回格式错误')
+        returnedFolders.add(targetMailbox)
+        successes.push({ mailbox: targetMailbox, data: validData })
+      })
+      if (!returnedFolders.has(mailbox)) throw new Error('邮件接口返回格式错误')
+
+      const failures = rawErrors.map(result => {
+        const targetMailbox = result?.mailbox
+        if (!folders.includes(targetMailbox) || returnedFolders.has(targetMailbox)) throw new Error('邮件接口返回格式错误')
+        returnedFolders.add(targetMailbox)
+        return { mailbox: targetMailbox, error: new Error(String(result?.error || '').trim() || '加载失败') }
+      })
+      if (returnedFolders.size !== folders.length) throw new Error('邮件接口返回格式错误')
 
       const mergedData = []
       const seen = new Set()
@@ -1755,7 +1785,7 @@
     }
 
     console.log('%c感谢您使用本项目！', 'color: #666; font-size: 11px;')
-    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.5.5', 'color: #007BFF; font-size: 12px;')
+    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.5.6', 'color: #007BFF; font-size: 12px;')
   }
 
   document.addEventListener('DOMContentLoaded', init)
