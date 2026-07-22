@@ -950,7 +950,7 @@ body::before {
 .footer-version { display: inline-flex; margin-left: 9px; padding-left: 9px; border-left: 1px solid #d7d7d2; color: #aaa; font-variant-numeric: tabular-nums; }
 
 
-/* v0.5.2 theme, selection actions and mail detail scrolling */
+/* v0.5.3 theme, selection actions and mail detail scrolling */
 .header-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .theme-toggle { width: 42px; height: 28px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: #f0f0ed; cursor: pointer; transition: background .2s, border-color .2s; }
 .theme-icon { display: block; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.2); transition: transform .22s, background .22s; }
@@ -1360,3 +1360,27 @@ button, input, textarea, select { font: inherit; }
 [data-theme="dark"] .validation-status[data-tone="error"] .validation-status-title { color: #ffb0b0; }
 [data-theme="dark"] .validation-status[data-tone="warning"] { border-color: #75603a; background: #332c1e; }
 [data-theme="dark"] .validation-status[data-tone="warning"] .validation-status-title { color: #f4d28b; }
+
+
+/* Combined inbox: mark messages that came from Junk */
+.mail-subject { min-width: 0; display: flex; align-items: center; gap: 7px; }
+.mail-subject-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mail-folder-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 3px 7px;
+  border: 1px solid #e7c98b;
+  border-radius: 999px;
+  background: #fff8e8;
+  color: #8a5a05;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+[data-theme="dark"] .mail-folder-badge {
+  border-color: #75603a;
+  background: #332c1e;
+  color: #f4d28b;
+}

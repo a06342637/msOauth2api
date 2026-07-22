@@ -38,6 +38,7 @@
     mailRequestController: null,
     mailRequestId: 0,
     mailListLoading: false,
+    mailListWarning: '',
     mailDetailCache: new Map(),
     mailDetailRequests: new Map(),
     mailDetailViewId: 0,
@@ -902,7 +903,7 @@
   }
 
   /* ---------- 邮件列表 ---------- */
-  const normalizeMailSummary = item => {
+  const normalizeMailSummary = (item, mailbox = 'INBOX') => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return null
     if (!['string', 'number'].includes(typeof item.id)) return null
 
@@ -910,10 +911,12 @@
     const provider = String(item.provider || '').trim().toLowerCase()
     if (!id || id.length > 1000 || !['graph', 'imap'].includes(provider)) return null
 
+    const sourceMailbox = mailbox === 'Junk' ? 'Junk' : 'INBOX'
     const text = (value, max) => String(value ?? '').slice(0, max)
     return {
       id,
       provider,
+      mailbox: sourceMailbox,
       send: text(item.send, 2000),
       to: text(item.to, 2000),
       subject: text(item.subject, 1000),
@@ -953,7 +956,7 @@
       refreshButton.disabled = loading
       refreshButton.textContent = loading ? '↻ 正在刷新…' : '↻ 刷新邮件'
     }
-    if (status) status.textContent = loading ? ' · 正在加载…' : ''
+    if (status) status.textContent = loading ? ' · 正在加载…' : (state.mailListWarning ? ' · ' + state.mailListWarning : '')
     if (loading && initial) renderMailSkeleton()
   }
 
@@ -967,11 +970,12 @@
 
     abortMailDetailRequests()
     state.currentMailbox = { refreshToken, clientId, email, mailbox }
+    state.mailListWarning = ''
     if (!isRefresh) {
       state.mailData = []
       state.currentMailPage = 1
     }
-    $('#current-mailbox-label').textContent = email + ' · ' + (mailbox === 'Junk' ? '垃圾箱' : '收件箱')
+    $('#current-mailbox-label').textContent = email + ' · ' + (mailbox === 'Junk' ? '垃圾箱' : '收件箱（含垃圾箱）')
     showMailSection()
     setMailListLoading(true, state.mailData.length === 0)
 
@@ -981,12 +985,12 @@
       controller.abort()
     }, CONFIG.MAIL_REQUEST_TIMEOUT)
 
-    try {
+    const fetchMailbox = async targetMailbox => {
       const response = await fetch(CONFIG.API_BASE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-store',
-        body: JSON.stringify({ refresh_token: refreshToken, client_id: clientId, email, mailbox, summary: true }),
+        body: JSON.stringify({ refresh_token: refreshToken, client_id: clientId, email, mailbox: targetMailbox, summary: true }),
         signal: controller.signal
       })
       let data
@@ -998,17 +1002,67 @@
         throw new Error(credentialApiMessage(response.status, data?.error, fallback))
       }
       if (!Array.isArray(data)) throw new Error('邮件接口返回格式错误')
-      const validData = data.map(normalizeMailSummary).filter(Boolean)
+      const validData = data.map(item => normalizeMailSummary(item, targetMailbox)).filter(Boolean)
       if (data.length > 0 && validData.length === 0) throw new Error('邮件接口返回格式错误')
-      if (requestId !== state.mailRequestId) return
+      return { mailbox: targetMailbox, data: validData }
+    }
 
-      state.mailData = validData
+    try {
+      const folders = mailbox === 'INBOX' ? ['INBOX', 'Junk'] : [mailbox]
+      const settled = await Promise.allSettled(folders.map(fetchMailbox))
+      if (controller.signal.aborted) {
+        const abortError = new Error('邮件加载已取消')
+        abortError.name = 'AbortError'
+        throw abortError
+      }
+
+      const primary = settled[0]
+      if (primary?.status === 'rejected') throw primary.reason
+      const successes = settled.filter(result => result.status === 'fulfilled').map(result => result.value)
+      const failures = settled
+        .map((result, index) => result.status === 'rejected' ? { mailbox: folders[index], error: result.reason } : null)
+        .filter(Boolean)
+
+      const mergedData = []
+      const seen = new Set()
+      successes.forEach(result => {
+        result.data.forEach(item => {
+          // IMAP 的数字 ID 只在当前文件夹内唯一，不能跨收件箱和垃圾箱去重。
+          const key = item.provider === 'imap'
+            ? item.provider + ':' + result.mailbox + ':' + item.id
+            : item.provider + ':' + item.id
+          if (seen.has(key)) return
+          seen.add(key)
+          mergedData.push(item)
+        })
+      })
+      mergedData.sort((left, right) => {
+        const leftTime = Date.parse(left.date)
+        const rightTime = Date.parse(right.date)
+        if (!Number.isNaN(leftTime) && !Number.isNaN(rightTime)) return rightTime - leftTime
+        if (!Number.isNaN(rightTime)) return 1
+        if (!Number.isNaN(leftTime)) return -1
+        return 0
+      })
+
+      if (requestId !== state.mailRequestId) return
+      state.mailData = mergedData
+      state.mailListWarning = failures.map(entry => {
+        const label = entry.mailbox === 'Junk' ? '垃圾箱' : '收件箱'
+        const reason = String(entry.error?.message || '').trim()
+        return label + '加载失败' + (reason ? '：' + reason : '')
+      }).join('，')
       renderMailTable()
-      if (isRefresh) showToast('邮件列表已刷新')
+      if (state.mailListWarning) {
+        showToast((isRefresh ? '邮件列表已刷新' : '收件箱已加载') + '，但' + state.mailListWarning)
+      } else if (isRefresh) {
+        showToast('邮件列表已刷新')
+      }
     } catch (error) {
       if (error.name === 'AbortError' && !timedOut) return
       if (requestId === state.mailRequestId) {
         const message = timedOut ? '邮件加载超时，请稍后重试' : (error.message || '加载失败')
+        state.mailListWarning = message
         if (state.mailData.length === 0) renderMailLoadError(message)
         showToast(message)
       }
@@ -1043,6 +1097,7 @@
     state.mailData = []
     state.currentMailPage = 1
     state.currentMailbox = null
+    state.mailListWarning = ''
     scrollPageTop()
   }
 
@@ -1068,10 +1123,10 @@
     }
 
     tbody.innerHTML = pageData.map((item, index) => `
-      <tr tabindex="0" data-mail-index="${start + index}" aria-label="打开邮件：${escapeHtml(item.subject || '无主题')}">
+      <tr tabindex="0" data-mail-index="${start + index}" aria-label="打开邮件：${escapeHtml(item.subject || '无主题')}${item.mailbox === 'Junk' ? '（垃圾箱）' : ''}">
         <td class="mail-address" title="${escapeHtml(item.send || '')}">${escapeHtml(item.send || '未知发件人')}</td>
         <td class="mail-address" title="${escapeHtml(item.to || state.currentMailbox?.email || '')}">${escapeHtml(item.to || state.currentMailbox?.email || '未知收件人')}</td>
-        <td class="mail-subject">${escapeHtml(item.subject || '(无主题)')}</td>
+        <td class="mail-subject">${item.mailbox === 'Junk' ? '<span class="mail-folder-badge" title="来自垃圾箱">垃圾箱</span>' : ''}<span class="mail-subject-text">${escapeHtml(item.subject || '(无主题)')}</span></td>
         <td class="mail-date">${escapeHtml(formatMailDate(item.date))}</td>
         <td><button type="button" class="btn btn-sm" data-action="view">查看</button></td>
       </tr>
@@ -1106,14 +1161,17 @@
     const provider = String(item?.provider || '')
     const id = String(item?.id || '')
     if (!mailbox || !provider || !id) return ''
+    const sourceMailbox = item?.mailbox === 'Junk' ? 'Junk' : (item?.mailbox === 'INBOX' ? 'INBOX' : String(mailbox.mailbox || ''))
+    if (!sourceMailbox) return ''
     return JSON.stringify([
       String(mailbox.email || '').toLowerCase(),
       String(mailbox.clientId || ''),
-      String(mailbox.mailbox || ''),
+      sourceMailbox,
       provider,
       id
     ])
   }
+
   const hasMailBody = item => item && (
     typeof item.html === 'string' ||
     typeof item.text === 'string'
@@ -1156,7 +1214,7 @@
 
   const fetchMailDetail = item => {
     if (hasMailBody(item)) return Promise.resolve(item)
-    const box = state.currentMailbox ? { ...state.currentMailbox } : null
+    const box = state.currentMailbox ? { ...state.currentMailbox, mailbox: item?.mailbox || state.currentMailbox.mailbox } : null
     const key = mailCacheKey(item, box)
     if (!key || !box) {
       return Promise.resolve({ ...item, text: item?.preview || '', html: '' })
@@ -1203,7 +1261,7 @@
         }
         if (contextId !== state.mailDetailContextId) throw new Error('邮件正文加载已取消')
 
-        const detail = { ...item, ...data, provider: item.provider, id: item.id }
+        const detail = { ...item, ...data, provider: item.provider, id: item.id, mailbox: item.mailbox }
         storeMailDetailCache(key, detail)
         return detail
       } catch (error) {
@@ -1641,7 +1699,7 @@
     }
 
     console.log('%c感谢您使用本项目！', 'color: #666; font-size: 11px;')
-    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.5.2', 'color: #007BFF; font-size: 12px;')
+    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.5.3', 'color: #007BFF; font-size: 12px;')
   }
 
   document.addEventListener('DOMContentLoaded', init)
