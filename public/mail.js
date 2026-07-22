@@ -383,7 +383,9 @@
           <td class="check-col">
             <input type="checkbox" data-index="${item.index}" aria-label="选择 ${escapeHtml(item.email)}" ${state.selectedItems.includes(String(item.index)) ? 'checked' : ''}>
           </td>
-          <td class="text-ellipsis" title="${escapeHtml(item.email)}">${escapeHtml(item.email)}</td>
+          <td class="text-ellipsis account-email-cell">
+            <button type="button" class="email-copy-button" data-action="copy-email" title="点击复制邮箱：${escapeHtml(item.email)}" aria-label="复制邮箱 ${escapeHtml(item.email)}">${escapeHtml(item.email)}</button>
+          </td>
           <td class="text-ellipsis" title="${escapeHtml(item.clientId)}">${escapeHtml(item.clientId)}</td>
           <td class="refresh-token" title="Refresh Token 已隐藏，点击“编辑”查看完整内容">${escapeHtml(formatRefreshToken(item.refreshToken))}</td>
           <td>
@@ -634,6 +636,35 @@
           showToast(error.message || '复制失败，请检查浏览器权限')
         }
       }
+    }
+  }
+
+  const copySelectedAccounts = async () => {
+    const data = getEmailData()
+    const rows = state.selectedItems
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map(index => data[index])
+      .filter(Boolean)
+      .map(item => String(item.email || '') + '----' + String(item.password || ''))
+
+    if (!rows.length) return
+    try {
+      await copyToClipboard(rows.join('\n'))
+      showToast(`已复制 ${rows.length} 个账号（邮箱----密码）`)
+    } catch (error) {
+      showToast(error.message || '复制失败，请检查浏览器权限')
+    }
+  }
+
+  const copyEmailAddress = async index => {
+    const email = String(getEmailData()[index]?.email || '').trim()
+    if (!email) return
+    try {
+      await copyToClipboard(email)
+      showToast('已复制邮箱：' + email)
+    } catch (error) {
+      showToast(error.message || '复制失败，请检查浏览器权限')
     }
   }
 
@@ -1618,6 +1649,7 @@
 
     $('#batch-actions').addEventListener('click', e => {
       const action = e.target.closest('button[data-action]')?.dataset.action
+      if (action === 'copy-account') copySelectedAccounts()
       if (action === 'export') exportSelectedAccounts()
       if (action === 'delete') batchDelete()
     })
@@ -1632,6 +1664,9 @@
       const index = parseInt(tr.dataset.index, 10)
 
       switch (action) {
+        case 'copy-email':
+          copyEmailAddress(index)
+          break
         case 'edit':
           openAccountEditor(index)
           break
@@ -1785,7 +1820,7 @@
     }
 
     console.log('%c感谢您使用本项目！', 'color: #666; font-size: 11px;')
-    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.5.6', 'color: #007BFF; font-size: 12px;')
+    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.5.7', 'color: #007BFF; font-size: 12px;')
   }
 
   document.addEventListener('DOMContentLoaded', init)
