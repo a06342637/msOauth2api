@@ -113,7 +113,7 @@
     </main>
 
     <footer class="footer">
-      Powered by <a href="https://github.com/a06342637/msOauth2api" target="_blank" rel="noopener noreferrer">a06342637/msOauth2api</a><span class="footer-version">v0.5.1</span>
+      Powered by <a href="https://github.com/a06342637/msOauth2api" target="_blank" rel="noopener noreferrer">a06342637/msOauth2api</a><span class="footer-version">v0.5.2</span>
     </footer>
   </div>
 
@@ -140,7 +140,9 @@
         <div class="form-group">
           <label for="import-delimiter">分隔符</label>
           <input type="text" id="import-delimiter" value="----" maxlength="32" placeholder="默认使用 ----">
+          <p class="form-help">未填写时默认使用 ----。导入前会验证 Client ID 和 Refresh Token，过期或无效的账号不会保存。</p>
         </div>
+        <div id="import-validation-status" class="validation-status" role="status" aria-live="polite" hidden></div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn" data-close-modal>取消</button>
@@ -174,6 +176,7 @@
         <div class="form-group">
           <label for="edit-refresh-token">Refresh Token</label>
           <textarea id="edit-refresh-token" rows="6" maxlength="20000"></textarea>
+          <div id="edit-validation-status" class="validation-status validation-status-compact" role="status" aria-live="polite" hidden></div>
         </div>
       </div>
       <div class="modal-footer">

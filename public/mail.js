@@ -19,7 +19,10 @@
     MAX_IMPORT_SIZE: 5 * 1024 * 1024,
     MAX_IMPORT_LINES: 10000,
     MAX_IMPORT_FILES: 1000,
-    IMPORT_FILE_CONCURRENCY: 6
+    IMPORT_FILE_CONCURRENCY: 6,
+    ACCOUNT_VALIDATION_API: '/api/refresh-token',
+    ACCOUNT_VALIDATION_TIMEOUT: 25000,
+    ACCOUNT_VALIDATION_CONCURRENCY: 4
   }
 
   const state = {
@@ -42,7 +45,10 @@
     mailPrefetchTimer: null,
     mailPrefetchActive: 0,
     importing: false,
-    importOperationId: 0
+    importOperationId: 0,
+    importValidationController: null,
+    accountSaveController: null,
+    accountSaving: false
   }
 
   const $ = (sel, ctx = document) => ctx.querySelector(sel)
@@ -84,6 +90,8 @@
   const cleanupModalState = id => {
     if (id === 'import-modal') {
       state.importOperationId++
+      state.importValidationController?.abort()
+      state.importValidationController = null
       state.importing = false
       const confirmButton = $('#import-confirm')
       if (confirmButton) {
@@ -92,6 +100,15 @@
       }
       resetImportForm()
     } else if (id === 'edit-account-modal') {
+      state.accountSaveController?.abort()
+      state.accountSaveController = null
+      state.accountSaving = false
+      const saveButton = $('#edit-account-save')
+      if (saveButton) {
+        saveButton.disabled = false
+        saveButton.textContent = '保存修改'
+      }
+      clearValidationStatus('#edit-validation-status')
       resetAccountEditorForm()
     } else if (id === 'delete-confirm-modal') {
       const count = $('#delete-confirm-count')
@@ -185,7 +202,131 @@
     toast.textContent = message
     toast.style.display = 'block'
     clearTimeout(toastTimer)
-    toastTimer = setTimeout(() => { toast.style.display = 'none' }, 2600)
+    toastTimer = setTimeout(() => { toast.style.display = 'none' }, 3600)
+  }
+
+  const clearValidationStatus = selector => {
+    const status = $(selector)
+    if (!status) return
+    status.hidden = true
+    status.dataset.tone = ''
+    status.replaceChildren()
+  }
+
+  const setValidationStatus = (selector, options = {}) => {
+    const status = $(selector)
+    if (!status) return
+    const { tone = 'info', title = '', message = '', details = [] } = options
+    status.hidden = false
+    status.dataset.tone = tone
+    status.replaceChildren()
+
+    if (title) {
+      const heading = document.createElement('strong')
+      heading.className = 'validation-status-title'
+      heading.textContent = title
+      status.appendChild(heading)
+    }
+    if (message) {
+      const copy = document.createElement('p')
+      copy.className = 'validation-status-message'
+      copy.textContent = message
+      status.appendChild(copy)
+    }
+    if (details.length) {
+      const list = document.createElement('ul')
+      details.slice(0, 8).forEach(detail => {
+        const item = document.createElement('li')
+        item.textContent = detail
+        list.appendChild(item)
+      })
+      if (details.length > 8) {
+        const item = document.createElement('li')
+        item.textContent = `另有 ${details.length - 8} 条未展开`
+        list.appendChild(item)
+      }
+      status.appendChild(list)
+    }
+  }
+
+  const makeValidationError = (message, validationType = 'invalid', status = 0) => {
+    const error = new Error(message)
+    error.validationType = validationType
+    error.status = status
+    return error
+  }
+
+  const createValidationAbortError = () => {
+    const error = makeValidationError('凭证验证已取消', 'cancelled')
+    error.name = 'AbortError'
+    return error
+  }
+
+  const MICROSOFT_CLIENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+  const credentialApiMessage = (status, message, fallback = 'Client ID 或 Refresh Token 验证失败') => {
+    const text = String(message || '').trim()
+    if (status === 401 && !text) return fallback
+    if (status === 401 && !/密码验证失败/.test(text) && !/(Client ID|Refresh Token|凭证|过期|失效|不正确|应用不可用|验证失败)/i.test(text)) {
+      return fallback
+    }
+    return text || fallback
+  }
+
+  const validateAccountCredentials = async ({ clientId, refreshToken, signal } = {}) => {
+    clientId = String(clientId || '').trim()
+    refreshToken = String(refreshToken || '').trim()
+    if (!clientId) throw makeValidationError('请填写 Client ID')
+    if (!refreshToken) throw makeValidationError('请填写 Refresh Token')
+    if (!MICROSOFT_CLIENT_ID_PATTERN.test(clientId)) {
+      throw makeValidationError('Client ID 格式不正确，请填写 Microsoft 应用的 GUID')
+    }
+    if (signal?.aborted) throw createValidationAbortError()
+
+    const controller = new AbortController()
+    let timedOut = false
+    const abortFromCaller = () => controller.abort()
+    signal?.addEventListener('abort', abortFromCaller, { once: true })
+    const timeout = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, CONFIG.ACCOUNT_VALIDATION_TIMEOUT)
+
+    try {
+      const response = await fetch(CONFIG.ACCOUNT_VALIDATION_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ client_id: clientId, refresh_token: refreshToken }),
+        signal: controller.signal
+      })
+      let data = null
+      try { data = await response.json() } catch (_) {}
+      if (!response.ok) {
+        const message = credentialApiMessage(response.status, data?.error)
+        const serviceFailure = response.status >= 500 || response.status === 429 || /密码验证失败/.test(message)
+        throw makeValidationError(message, serviceFailure ? 'service' : 'invalid', response.status)
+      }
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw makeValidationError('凭证验证接口返回格式错误，请稍后重试', 'service', response.status)
+      }
+
+      const rotatedToken = typeof data.refresh_token === 'string' ? data.refresh_token.trim() : ''
+      if (data.valid !== true && !rotatedToken) {
+        throw makeValidationError('凭证验证接口未确认账号有效，请稍后重试', 'service', response.status)
+      }
+      return { refreshToken: rotatedToken || refreshToken }
+    } catch (error) {
+      if (error?.validationType) throw error
+      if (signal?.aborted) throw createValidationAbortError()
+      if (timedOut || error?.name === 'AbortError') {
+        throw makeValidationError('验证 Client ID 和 Refresh Token 超时，请稍后重试', 'service', 504)
+      }
+      throw makeValidationError('无法连接凭证验证服务，请检查网络后重试', 'service', 502)
+    } finally {
+      clearTimeout(timeout)
+      signal?.removeEventListener('abort', abortFromCaller)
+    }
   }
 
   /* ---------- 账号列表相关 ---------- */
@@ -315,6 +456,15 @@
     const account = getEmailData()[index]
     if (!account) return
 
+    state.accountSaveController?.abort()
+    state.accountSaveController = null
+    state.accountSaving = false
+    clearValidationStatus('#edit-validation-status')
+    const saveButton = $('#edit-account-save')
+    if (saveButton) {
+      saveButton.disabled = false
+      saveButton.textContent = '保存修改'
+    }
     state.editingAccountIndex = index
     $('#edit-email').value = account.email || ''
     $('#edit-password').value = account.password || ''
@@ -323,7 +473,8 @@
     openModal('edit-account-modal')
   }
 
-  const saveAccountEditor = () => {
+  const saveAccountEditor = async () => {
+    if (state.accountSaving) return
     const index = state.editingAccountIndex
     if (index === null) return
 
@@ -341,9 +492,9 @@
       return
     }
 
-    const data = getEmailData()
-    if (!data[index]) return
-    const duplicate = data.some((item, itemIndex) => itemIndex !== index && String(item.email || '').toLowerCase() === email.toLowerCase())
+    const initialData = getEmailData()
+    if (!initialData[index]) return
+    const duplicate = initialData.some((item, itemIndex) => itemIndex !== index && String(item.email || '').toLowerCase() === email.toLowerCase())
     if (duplicate) {
       showToast('该邮箱已存在，不能重复保存')
       return
@@ -352,16 +503,54 @@
       showToast('账号字段过长，请缩短后重试')
       return
     }
-    data[index] = { ...data[index], email, password, clientId, refreshToken }
+
+    const controller = new AbortController()
+    const saveButton = $('#edit-account-save')
+    state.accountSaveController = controller
+    state.accountSaving = true
+    saveButton.disabled = true
+    saveButton.textContent = '正在验证…'
+    setValidationStatus('#edit-validation-status', {
+      tone: 'pending',
+      title: '正在验证凭证',
+      message: '正在向 Microsoft 验证 Client ID 和 Refresh Token，请稍候。'
+    })
+
     try {
+      const verified = await validateAccountCredentials({ clientId, refreshToken, signal: controller.signal })
+      if (controller.signal.aborted || state.editingAccountIndex !== index || !isModalOpen($('#edit-account-modal'))) return
+
+      const data = getEmailData()
+      if (!data[index]) throw new Error('账号已不存在，请关闭窗口后重试')
+      const duplicateNow = data.some((item, itemIndex) => itemIndex !== index && String(item.email || '').toLowerCase() === email.toLowerCase())
+      if (duplicateNow) throw new Error('该邮箱已存在，不能重复保存')
+
+      data[index] = { ...data[index], email, password, clientId, refreshToken: verified.refreshToken }
       setEmailData(data)
       state.emailData = data
+      state.accountSaveController = null
+      state.accountSaving = false
       state.editingAccountIndex = null
       closeModal('edit-account-modal')
       render()
-      showToast('账号信息已更新')
+      showToast('凭证验证通过，账号信息已更新')
     } catch (error) {
-      showToast(error.message)
+      if (error?.validationType === 'cancelled' || controller.signal.aborted) return
+      if (state.accountSaveController !== controller) return
+      const message = error.message || 'Client ID 或 Refresh Token 验证失败'
+      setValidationStatus('#edit-validation-status', {
+        tone: error?.validationType === 'service' ? 'warning' : 'error',
+        title: error?.validationType === 'service' ? '暂时无法验证，账号未保存' : '凭证验证失败，账号未保存',
+        message
+      })
+      showToast('账号未保存：' + message)
+    } finally {
+      if (state.accountSaveController === controller) {
+        state.accountSaveController = null
+        state.accountSaving = false
+        saveButton.disabled = false
+        saveButton.textContent = '保存修改'
+      }
     }
   }
 
@@ -472,12 +661,87 @@
     return contents
   }
 
+  const parseImportLines = (lines, delimiter, existingAccounts = []) => {
+    const existingEmails = new Set(existingAccounts.map(item => String(item.email || '').trim().toLowerCase()).filter(Boolean))
+    const candidates = []
+    const invalidRows = []
+    let duplicates = 0
+
+    lines.forEach((line, index) => {
+      const value = String(line || '').trim()
+      if (!value) return
+      const rowLabel = `第 ${index + 1} 行`
+      const fields = value.split(delimiter).map(field => field.trim())
+      if (fields.length < 4) {
+        invalidRows.push(rowLabel + '：字段不足，应为邮箱、密码/Key、Client ID、Refresh Token')
+        return
+      }
+
+      const [email, password, clientId, ...tokenParts] = fields
+      const refreshToken = tokenParts.join(delimiter).trim()
+      let reason = ''
+      if (!email || email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) reason = '邮箱格式不正确'
+      else if (!password || password.length > 1000) reason = '密码/Key 为空或过长'
+      else if (!clientId || clientId.length > 200) reason = 'Client ID 为空或过长'
+      else if (!refreshToken || refreshToken.length > 20000) reason = 'Refresh Token 为空或过长'
+      if (reason) {
+        invalidRows.push(rowLabel + '：' + reason)
+        return
+      }
+
+      const emailKey = email.toLowerCase()
+      if (existingEmails.has(emailKey)) {
+        duplicates++
+        return
+      }
+      existingEmails.add(emailKey)
+      candidates.push({ email, password, clientId, refreshToken, delimiter, lineNumber: index + 1 })
+    })
+
+    return { candidates, invalidRows, duplicates }
+  }
+
+  const validateImportCandidates = async (candidates, options = {}) => {
+    const { signal, onProgress } = options
+    const results = new Array(candidates.length)
+    let cursor = 0
+    let completed = 0
+
+    const worker = async () => {
+      while (true) {
+        if (signal?.aborted) throw createValidationAbortError()
+        const index = cursor++
+        if (index >= candidates.length) return
+        const candidate = candidates[index]
+        try {
+          const verified = await validateAccountCredentials({
+            clientId: candidate.clientId,
+            refreshToken: candidate.refreshToken,
+            signal
+          })
+          results[index] = { ok: true, candidate, refreshToken: verified.refreshToken }
+        } catch (error) {
+          if (error?.validationType === 'cancelled' || signal?.aborted) throw createValidationAbortError()
+          results[index] = { ok: false, candidate, error }
+        } finally {
+          completed++
+          onProgress?.(completed, candidates.length)
+        }
+      }
+    }
+
+    const workerCount = Math.min(CONFIG.ACCOUNT_VALIDATION_CONCURRENCY, candidates.length)
+    await Promise.all(Array.from({ length: workerCount }, worker))
+    return results
+  }
+
   const resetImportForm = () => {
     $('#import-text').value = ''
     $('#import-file').value = ''
     $('#import-folder').value = ''
     $('#import-delimiter').value = '----'
     $('#file-info').textContent = '未选择文件'
+    clearValidationStatus('#import-validation-status')
   }
 
   const importEmails = async () => {
@@ -507,72 +771,129 @@
 
     const confirmButton = $('#import-confirm')
     const operationId = ++state.importOperationId
+    const controller = new AbortController()
+    state.importValidationController?.abort()
+    state.importValidationController = controller
     state.importing = true
     confirmButton.disabled = true
-    confirmButton.textContent = '导入中…'
+    confirmButton.textContent = '正在读取…'
+    setValidationStatus('#import-validation-status', {
+      tone: 'pending',
+      title: '正在准备导入',
+      message: '正在读取并检查账号格式，请稍候。'
+    })
+
     try {
-      // 文件读取期间保持弹窗可操作，用户可随时取消导入。
+      // 文件读取和凭证验证期间均可通过关闭弹窗安全取消，取消后不会写入任何账号。
       const fileContents = await readFilesAsText(files, operationId)
-      if (operationId !== state.importOperationId) return
+      if (operationId !== state.importOperationId || controller.signal.aborted) return
       const content = [pastedText, ...fileContents].filter(Boolean).join('\n')
       const lines = content.split(/\r\n?|\n/)
       if (lines.length > CONFIG.MAX_IMPORT_LINES) throw new Error('一次最多导入 10000 行账号')
 
-      const data = getEmailData()
-      const existingEmails = new Set(data.map(item => String(item.email || '').trim().toLowerCase()))
-      let count = 0
-      let skipped = 0
-      let duplicates = 0
-
-      lines.forEach(line => {
-        const value = line.trim()
-        if (!value) return
-
-        const fields = value.split(delimiter).map(field => field.trim())
-        if (fields.length < 4) {
-          skipped++
-          return
-        }
-
-        const [email, password, clientId, ...tokenParts] = fields
-        const refreshToken = tokenParts.join(delimiter).trim()
-        const validEmail = email.length <= 320 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-        if (!validEmail || !password || password.length > 1000 || !clientId || clientId.length > 200 || !refreshToken || refreshToken.length > 20000) {
-          skipped++
-          return
-        }
-
-        const emailKey = email.toLowerCase()
-        if (existingEmails.has(emailKey)) {
-          duplicates++
-          return
-        }
-
-        existingEmails.add(emailKey)
-        data.push({ email, password, clientId, refreshToken, delimiter })
-        count++
-      })
-
-      if (count === 0) {
-        showToast(duplicates > 0 && skipped === 0
-          ? '检测到 ' + duplicates + ' 条重复账号，未重复导入'
-          : '没有可导入的有效账号，请检查分隔符（当前：' + delimiter + '）')
+      const parsed = parseImportLines(lines, delimiter, getEmailData())
+      if (parsed.candidates.length === 0) {
+        const parts = [
+          parsed.duplicates ? `重复账号 ${parsed.duplicates} 条` : '',
+          parsed.invalidRows.length ? `格式错误 ${parsed.invalidRows.length} 条` : ''
+        ].filter(Boolean)
+        const message = parts.length ? parts.join('，') : '没有读取到账号数据'
+        setValidationStatus('#import-validation-status', {
+          tone: parsed.invalidRows.length ? 'error' : 'warning',
+          title: '没有可验证的账号',
+          message: message + '，未导入任何数据。',
+          details: parsed.invalidRows
+        })
+        showToast(message + '，未导入')
         return
       }
 
-      if (operationId !== state.importOperationId) return
-      setEmailData(data)
-      state.emailData = data
-      state.currentPage = 1
-      closeModal('import-modal')
-      resetImportForm()
-      render()
-      const details = [duplicates ? '跳过 ' + duplicates + ' 条重复账号' : '', skipped ? '跳过 ' + skipped + ' 条无效数据' : ''].filter(Boolean).join('，')
-      showToast('成功导入 ' + count + ' 条' + (details ? '，' + details : ''))
+      confirmButton.textContent = `正在验证 0/${parsed.candidates.length}…`
+      setValidationStatus('#import-validation-status', {
+        tone: 'pending',
+        title: '正在验证 Microsoft 凭证',
+        message: `正在验证 0/${parsed.candidates.length}，只有 Client ID 和 Refresh Token 均有效的账号才会导入。`
+      })
+
+      const results = await validateImportCandidates(parsed.candidates, {
+        signal: controller.signal,
+        onProgress: (completed, total) => {
+          if (operationId !== state.importOperationId || controller.signal.aborted) return
+          confirmButton.textContent = `正在验证 ${completed}/${total}…`
+          const progress = $('.validation-status-message', $('#import-validation-status'))
+          if (progress) progress.textContent = `已验证 ${completed}/${total}，请勿关闭页面。`
+        }
+      })
+      if (operationId !== state.importOperationId || controller.signal.aborted) return
+
+      const credentialFailures = results.filter(result => !result.ok && result.error?.validationType !== 'service')
+      const serviceFailures = results.filter(result => !result.ok && result.error?.validationType === 'service')
+      const verifiedAccounts = results.filter(result => result.ok)
+      const data = getEmailData()
+      const latestEmails = new Set(data.map(item => String(item.email || '').trim().toLowerCase()).filter(Boolean))
+      let duplicateCount = parsed.duplicates
+      let importedCount = 0
+
+      verifiedAccounts.forEach(result => {
+        const emailKey = result.candidate.email.toLowerCase()
+        if (latestEmails.has(emailKey)) {
+          duplicateCount++
+          return
+        }
+        latestEmails.add(emailKey)
+        const { lineNumber, ...account } = result.candidate
+        data.push({ ...account, refreshToken: result.refreshToken })
+        importedCount++
+      })
+
+      if (importedCount > 0) {
+        setEmailData(data)
+        state.emailData = data
+        state.currentPage = 1
+        render()
+      }
+
+      const summaryParts = [
+        `成功导入 ${importedCount} 条`,
+        duplicateCount ? `重复 ${duplicateCount} 条` : '',
+        parsed.invalidRows.length ? `格式错误 ${parsed.invalidRows.length} 条` : '',
+        credentialFailures.length ? `凭证无效或过期 ${credentialFailures.length} 条` : '',
+        serviceFailures.length ? `验证服务异常 ${serviceFailures.length} 条` : ''
+      ].filter(Boolean)
+      const summary = summaryParts.join('，')
+      const failureDetails = [
+        ...parsed.invalidRows,
+        ...credentialFailures.map(result => `第 ${result.candidate.lineNumber} 行 ${result.candidate.email}：${result.error.message}`),
+        ...serviceFailures.map(result => `第 ${result.candidate.lineNumber} 行 ${result.candidate.email}：${result.error.message}`)
+      ]
+      const hasIssues = duplicateCount > 0 || parsed.invalidRows.length > 0 || credentialFailures.length > 0 || serviceFailures.length > 0
+
+      if (importedCount > 0 && !hasIssues) {
+        state.importValidationController = null
+        closeModal('import-modal')
+        showToast(summary + '，凭证均验证通过')
+        return
+      }
+
+      setValidationStatus('#import-validation-status', {
+        tone: importedCount > 0 ? 'warning' : 'error',
+        title: importedCount > 0 ? '有效账号已导入，部分数据被跳过' : '凭证验证未通过，未导入账号',
+        message: summary + '。无效、过期或无法完成验证的账号均未保存。',
+        details: failureDetails
+      })
+      showToast(summary)
     } catch (error) {
-      if (operationId === state.importOperationId) showToast(error.message || '读取文件失败')
+      if (operationId !== state.importOperationId || controller.signal.aborted || error?.validationType === 'cancelled') return
+      const message = error.message || '导入失败，请稍后重试'
+      setValidationStatus('#import-validation-status', {
+        tone: 'error',
+        title: '导入失败，未写入本次数据',
+        message
+      })
+      showToast(message)
     } finally {
       if (operationId === state.importOperationId) {
+        if (state.importValidationController === controller) state.importValidationController = null
         state.importing = false
         confirmButton.disabled = false
         confirmButton.textContent = '导入'
@@ -670,7 +991,12 @@
       })
       let data
       try { data = await response.json() } catch (_) { throw new Error('邮件接口返回格式错误') }
-      if (!response.ok) throw new Error(data?.error || ('请求失败（' + response.status + '）'))
+      if (!response.ok) {
+        const fallback = response.status === 401
+          ? 'Client ID 或 Refresh Token 不正确、已过期或已失效，请编辑账号后重新验证'
+          : ('请求失败（' + response.status + '）')
+        throw new Error(credentialApiMessage(response.status, data?.error, fallback))
+      }
       if (!Array.isArray(data)) throw new Error('邮件接口返回格式错误')
       const validData = data.map(normalizeMailSummary).filter(Boolean)
       if (data.length > 0 && validData.length === 0) throw new Error('邮件接口返回格式错误')
@@ -865,7 +1191,12 @@
         })
         let data
         try { data = await response.json() } catch (_) { throw new Error('邮件正文接口返回格式错误') }
-        if (!response.ok) throw new Error(data?.error || ('请求失败（' + response.status + '）'))
+        if (!response.ok) {
+          const fallback = response.status === 401
+            ? 'Client ID 或 Refresh Token 不正确、已过期或已失效，请编辑账号后重新验证'
+            : ('请求失败（' + response.status + '）')
+          throw new Error(credentialApiMessage(response.status, data?.error, fallback))
+        }
         if (!data || typeof data !== 'object' || Array.isArray(data) || !hasMailBody(data)) throw new Error('邮件正文接口返回格式错误')
         if ((data.html != null && typeof data.html !== 'string') || (data.text != null && typeof data.text !== 'string')) {
           throw new Error('邮件正文接口返回格式错误')
@@ -1310,7 +1641,7 @@
     }
 
     console.log('%c感谢您使用本项目！', 'color: #666; font-size: 11px;')
-    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.5.1', 'color: #007BFF; font-size: 12px;')
+    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.5.2', 'color: #007BFF; font-size: 12px;')
   }
 
   document.addEventListener('DOMContentLoaded', init)

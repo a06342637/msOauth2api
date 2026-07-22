@@ -12,7 +12,7 @@ module.exports = async (req, res) => {
     const refreshToken = getText(source, 'refresh_token', { required: true, max: 20000 })
     const clientId = getText(source, 'client_id', { required: true, max: 200 })
     const data = await requestAccessToken(refreshToken, clientId, '', { bypassCache: true })
-    return res.status(200).json({ refresh_token: data.refresh_token || refreshToken })
+    return res.status(200).json({ valid: true, refresh_token: data.refresh_token || refreshToken })
   } catch (error) {
     return sendHandlerError(res, error, '刷新 Token 失败')
   }

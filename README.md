@@ -1,6 +1,6 @@
 # MS OAuth2API
 
-Microsoft OAuth2 邮件 API 与本地邮箱工作台。当前版本：**0.5.1**。
+Microsoft OAuth2 邮件 API 与本地邮箱工作台。当前版本：**0.5.2**。
 
 账号数据仅保存在浏览器的 localStorage 中，不会写入仓库或服务端数据库。
 

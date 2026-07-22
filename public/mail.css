@@ -950,7 +950,7 @@ body::before {
 .footer-version { display: inline-flex; margin-left: 9px; padding-left: 9px; border-left: 1px solid #d7d7d2; color: #aaa; font-variant-numeric: tabular-nums; }
 
 
-/* v0.5.1 theme, selection actions and mail detail scrolling */
+/* v0.5.2 theme, selection actions and mail detail scrolling */
 .header-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .theme-toggle { width: 42px; height: 28px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: #f0f0ed; cursor: pointer; transition: background .2s, border-color .2s; }
 .theme-icon { display: block; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.2); transition: transform .22s, background .22s; }
@@ -1321,3 +1321,42 @@ button, input, textarea, select { font: inherit; }
 [data-theme="dark"] .table tbody tr:focus-within .mail-date {
   color: #d0d0c8;
 }
+
+
+/* Credential validation feedback */
+.validation-status {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line, #e4e4e1);
+  border-radius: 12px;
+  background: var(--soft, #f7f7f5);
+  color: var(--ink, #111);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.validation-status[hidden] { display: none !important; }
+.validation-status-title { display: block; font-weight: 700; }
+.validation-status-message { margin-top: 3px; color: var(--muted, #737373); overflow-wrap: anywhere; }
+.validation-status ul { margin: 8px 0 0 18px; padding: 0; color: var(--muted, #737373); }
+.validation-status li { margin-top: 2px; overflow-wrap: anywhere; }
+.validation-status[data-tone="pending"] { border-color: #b8c9e8; background: #f2f6ff; }
+.validation-status[data-tone="pending"] .validation-status-title { color: #315b9d; }
+.validation-status[data-tone="error"] { border-color: #efb5b5; background: #fff5f5; }
+.validation-status[data-tone="error"] .validation-status-title { color: #a32929; }
+.validation-status[data-tone="warning"] { border-color: #e8c98a; background: #fffaf0; }
+.validation-status[data-tone="warning"] .validation-status-title { color: #8a5a05; }
+.validation-status-compact { margin-top: 10px; font-size: 12px; }
+
+[data-theme="dark"] .validation-status {
+  border-color: #3b3b37;
+  background: #242422;
+  color: #efefe9;
+}
+[data-theme="dark"] .validation-status-message,
+[data-theme="dark"] .validation-status ul { color: #b9b9b1; }
+[data-theme="dark"] .validation-status[data-tone="pending"] { border-color: #405779; background: #202b3d; }
+[data-theme="dark"] .validation-status[data-tone="pending"] .validation-status-title { color: #a9c9ff; }
+[data-theme="dark"] .validation-status[data-tone="error"] { border-color: #754444; background: #342323; }
+[data-theme="dark"] .validation-status[data-tone="error"] .validation-status-title { color: #ffb0b0; }
+[data-theme="dark"] .validation-status[data-tone="warning"] { border-color: #75603a; background: #332c1e; }
+[data-theme="dark"] .validation-status[data-tone="warning"] .validation-status-title { color: #f4d28b; }
