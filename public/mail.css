@@ -1024,3 +1024,49 @@ body.modal-open { overflow: hidden !important; }
 [data-theme="dark"] .mail-modal .modal-body { scrollbar-color: #666 #242422; }
 [data-theme="dark"] .mail-modal .modal-body::-webkit-scrollbar-track { background: #242422; }
 [data-theme="dark"] .mail-modal .modal-body::-webkit-scrollbar-thumb { background: #666; border-color: #242422; }
+
+
+/* Dark theme contrast and message rendering */
+[data-theme="dark"] {
+  --gray-400: #8f8f88;
+  --gray-800: #e3e3dc;
+  --ink: #f1f1ec;
+  --paper: rgba(25, 25, 24, .96);
+}
+[data-theme="dark"] body::before {
+  background: radial-gradient(circle at 50% 0%, rgba(116, 91, 45, .12), transparent 38%), linear-gradient(rgba(17, 17, 16, .18), rgba(17, 17, 16, .18));
+}
+[data-theme="dark"] .status-pill {
+  background: rgba(26, 26, 25, .9);
+  color: #c7c7c0;
+  border-color: #454541;
+}
+[data-theme="dark"] .search-input::placeholder,
+[data-theme="dark"] .form-group input::placeholder,
+[data-theme="dark"] .form-group textarea::placeholder {
+  color: #8f8f88;
+  opacity: 1;
+}
+[data-theme="dark"] .table td,
+[data-theme="dark"] #email-table td,
+[data-theme="dark"] #mail-table td,
+[data-theme="dark"] #mail-table td:nth-child(2),
+[data-theme="dark"] #mail-table td:nth-child(3) {
+  color: #e3e3dc;
+}
+[data-theme="dark"] .text-ellipsis { color: #f0f0ea; }
+[data-theme="dark"] .refresh-token,
+[data-theme="dark"] #email-table td.refresh-token,
+[data-theme="dark"] .mail-address,
+[data-theme="dark"] .mail-date { color: #b9b9b1; }
+[data-theme="dark"] .pagination-info,
+[data-theme="dark"] .section-heading p,
+[data-theme="dark"] .mail-header p,
+[data-theme="dark"] .mail-meta,
+[data-theme="dark"] .form-help,
+[data-theme="dark"] .file-info { color: #aaa9a2; }
+[data-theme="dark"] .mail-content { color: #e8e8e2; }
+.mail-content iframe.mail-frame-dark {
+  background: #fff;
+  filter: invert(1) hue-rotate(180deg);
+}

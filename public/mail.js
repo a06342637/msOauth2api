@@ -473,6 +473,27 @@
     btns.innerHTML = html
   }
 
+  const syncMailFrameTheme = (iframe) => {
+    if (!iframe) return
+    const isDark = document.documentElement.dataset.theme === 'dark'
+    iframe.classList.toggle('mail-frame-dark', isDark)
+
+    try {
+      const doc = iframe.contentDocument
+      if (!doc) return
+      let style = doc.getElementById('mail-workbench-theme')
+      if (!style) {
+        style = doc.createElement('style')
+        style.id = 'mail-workbench-theme'
+        ;(doc.head || doc.documentElement).appendChild(style)
+      }
+      // 外层反色让白底邮件变暗；媒体元素再次反色，避免图片和视频颜色失真。
+      style.textContent = isDark
+        ? 'img, picture, video, canvas { filter: invert(1) hue-rotate(180deg) !important; }'
+        : ''
+    } catch (_) { /* 邮件正文无法访问时仍保留 iframe 外层暗色处理 */ }
+  }
+
   const viewMailDetail = (index) => {
     const item = state.mailData[index]
     if (!item) return
@@ -497,6 +518,7 @@
       iframe.addEventListener('load', () => {
         try {
           const doc = iframe.contentDocument
+          syncMailFrameTheme(iframe)
           const resize = () => {
             const h = Math.max(doc?.body?.scrollHeight || 0, doc?.documentElement?.scrollHeight || 0, 400)
             iframe.style.height = h + 'px'
@@ -703,6 +725,7 @@
 
   const applyTheme = (theme) => {
     document.documentElement.dataset.theme = theme
+    syncMailFrameTheme($('#mail-modal-content iframe'))
     localStorage.setItem('mailTheme', theme)
     const toggle = $('#theme-toggle')
     if (toggle) toggle.setAttribute('aria-label', theme === 'dark' ? '切换到明亮模式' : '切换到暗色模式')
