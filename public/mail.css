@@ -1173,3 +1173,21 @@ button, input, textarea, select { font: inherit; }
 @media (max-width: 760px) {
   .toolbar-field, .search-input { width: 100%; }
 }
+
+
+/* Pagination and keyboard interaction safeguards */
+.pagination { align-items: center; flex-wrap: wrap; }
+.pagination-ellipsis {
+  min-width: 24px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  color: #777;
+  user-select: none;
+}
+#mail-table tbody tr[data-mail-index] { cursor: pointer; }
+#mail-table tbody tr[data-mail-index]:focus-visible { outline: 2px solid #2b70f6; outline-offset: -2px; }
+#mail-table tbody tr[data-mail-index]:focus-visible td { background: #f3f6ff; }
+.btn:disabled { cursor: wait; opacity: .65; transform: none !important; }
+[data-theme="dark"] .pagination-ellipsis { color: #aaa9a2; }
+[data-theme="dark"] #mail-table tbody tr[data-mail-index]:focus-visible td { background: #292927; }

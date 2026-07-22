@@ -11,6 +11,9 @@
     MAIL_ITEMS_PER_PAGE: 10,
     DEFAULT_ITEMS_PER_PAGE: 10,
     API_BASE: '/api/mail-all',
+    MAIL_REQUEST_TIMEOUT: 30000,
+    MAX_IMPORT_SIZE: 5 * 1024 * 1024,
+    MAX_IMPORT_LINES: 10000
   }
 
   const state = {
@@ -22,28 +25,57 @@
     selectedItems: [],
     searchKeyword: '',
     currentMailbox: null,
-    editingAccountIndex: null
+    editingAccountIndex: null,
+    mailRequestController: null,
+    mailRequestId: 0,
+    importing: false
   }
 
   const $ = (sel, ctx = document) => ctx.querySelector(sel)
-  const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)]
+  const queryAll = (sel, ctx = document) => [...ctx.querySelectorAll(sel)]
+  let toastTimer = null
+  let lastFocusedElement = null
 
   /* ---------- Loading ---------- */
-  const showLoading = () => $('#loading-overlay').style.display = 'flex'
-  const hideLoading = () => $('#loading-overlay').style.display = 'none'
+  const showLoading = () => {
+    const overlay = $('#loading-overlay')
+    overlay.style.display = 'flex'
+    overlay.setAttribute('aria-hidden', 'false')
+  }
+  const hideLoading = () => {
+    const overlay = $('#loading-overlay')
+    overlay.style.display = 'none'
+    overlay.setAttribute('aria-hidden', 'true')
+  }
 
   /* ---------- 模态框 ---------- */
   const openModal = (id) => {
-    $(`#${id}`).style.display = 'flex'
+    const modal = $(`#${id}`)
+    if (!modal) return
+    lastFocusedElement = document.activeElement
+    modal.style.display = 'flex'
+    modal.setAttribute('aria-hidden', 'false')
     document.body.classList.add('modal-open')
+    requestAnimationFrame(() => modal.querySelector('.modal-close, input, textarea, button')?.focus())
   }
   const closeModal = (id) => {
-    $(`#${id}`).style.display = 'none'
-    if (![...document.querySelectorAll('.modal-overlay')].some(el => el.style.display === 'flex')) document.body.classList.remove('modal-open')
+    const modal = $(`#${id}`)
+    if (!modal) return
+    modal.style.display = 'none'
+    modal.setAttribute('aria-hidden', 'true')
+    if (id === 'mail-modal') $('#mail-modal-content')?.replaceChildren()
+    if (![...document.querySelectorAll('.modal-overlay')].some(el => el.style.display === 'flex')) {
+      document.body.classList.remove('modal-open')
+      lastFocusedElement?.focus?.()
+      lastFocusedElement = null
+    }
   }
   const closeAllModals = () => {
-    document.querySelectorAll('.modal-overlay').forEach(el => { el.style.display = 'none' })
+    document.querySelectorAll('.modal-overlay').forEach(el => { el.style.display = 'none'; el.setAttribute('aria-hidden', 'true') })
+    $('#mail-modal-content')?.replaceChildren()
     document.body.classList.remove('modal-open')
+    lastFocusedElement?.focus?.()
+    lastFocusedElement = null
   }
 
   /* ---------- localStorage ---------- */
@@ -52,11 +84,17 @@
       const data = JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEY) || '[]')
       return Array.isArray(data) ? data : []
     } catch (_) {
-      localStorage.removeItem(CONFIG.STORAGE_KEY)
+      try { localStorage.removeItem(CONFIG.STORAGE_KEY) } catch (_) {}
       return []
     }
   }
-  const setEmailData = (data) => localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(data))
+  const setEmailData = (data) => {
+    try {
+      localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(data))
+    } catch (_) {
+      throw new Error('保存失败：浏览器本地存储空间不足或不可用')
+    }
+  }
 
   /* ---------- 工具函数 ---------- */
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -67,7 +105,8 @@
     if (!toast) return
     toast.textContent = message
     toast.style.display = 'block'
-    setTimeout(() => toast.style.display = 'none', 2000)
+    clearTimeout(toastTimer)
+    toastTimer = setTimeout(() => { toast.style.display = 'none' }, 2600)
   }
 
   /* ---------- 账号列表相关 ---------- */
@@ -103,17 +142,17 @@
       return `
         <tr data-index="${item.index}">
           <td class="check-col">
-            <input type="checkbox" data-index="${item.index}" ${state.selectedItems.includes(String(item.index)) ? 'checked' : ''}>
+            <input type="checkbox" data-index="${item.index}" aria-label="选择 ${escapeHtml(item.email)}" ${state.selectedItems.includes(String(item.index)) ? 'checked' : ''}>
           </td>
           <td class="text-ellipsis" title="${escapeHtml(item.email)}">${escapeHtml(item.email)}</td>
           <td class="text-ellipsis" title="${escapeHtml(item.clientId)}">${escapeHtml(item.clientId)}</td>
           <td class="refresh-token" title="${escapeHtml(item.refreshToken)}">${escapeHtml(formatRefreshToken(item.refreshToken))}</td>
           <td>
             <div class="actions">
-              <button class="btn btn-sm" data-action="edit">编辑</button>
-              <button class="btn btn-sm" data-action="inbox">收件箱</button>
-              <button class="btn btn-sm" data-action="junk">垃圾箱</button>
-              <button class="btn btn-sm btn-danger" data-action="delete">删除</button>
+              <button type="button" class="btn btn-sm" data-action="edit">编辑</button>
+              <button type="button" class="btn btn-sm" data-action="inbox">收件箱</button>
+              <button type="button" class="btn btn-sm" data-action="junk">垃圾箱</button>
+              <button type="button" class="btn btn-sm btn-danger" data-action="delete">删除</button>
             </div>
           </td>
         </tr>
@@ -141,6 +180,18 @@
     if (batchActions) batchActions.hidden = state.selectedItems.length === 0
   }
 
+  const getPaginationItems = (current, total) => {
+    if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1)
+    const pages = new Set([1, total, current - 1, current, current + 1])
+    const ordered = [...pages].filter(page => page >= 1 && page <= total).sort((a, b) => a - b)
+    const items = []
+    ordered.forEach((page, index) => {
+      if (index && page - ordered[index - 1] > 1) items.push('ellipsis')
+      items.push(page)
+    })
+    return items
+  }
+
   const renderPagination = () => {
     const filtered = getFilteredData()
     const total = filtered.length
@@ -156,13 +207,15 @@
       return
     }
 
-    let html = `<button ${state.currentPage <= 1 ? 'disabled' : ''} data-page="${state.currentPage - 1}">‹</button>`
+    let html = `<button type="button" aria-label="上一页" ${state.currentPage <= 1 ? 'disabled' : ''} data-page="${state.currentPage - 1}">‹</button>`
 
-    for (let i = 1; i <= totalPages; i++) {
-      html += `<button class="${i === state.currentPage ? 'active' : ''}" data-page="${i}">${i}</button>`
-    }
+    getPaginationItems(state.currentPage, totalPages).forEach(item => {
+      html += item === 'ellipsis'
+        ? '<span class="pagination-ellipsis" aria-hidden="true">…</span>'
+        : `<button type="button" class="${item === state.currentPage ? 'active' : ''}" data-page="${item}"${item === state.currentPage ? ' aria-current="page"' : ''}>${item}</button>`
+    })
 
-    html += `<button ${state.currentPage >= totalPages ? 'disabled' : ''} data-page="${state.currentPage + 1}">›</button>`
+    html += `<button type="button" aria-label="下一页" ${state.currentPage >= totalPages ? 'disabled' : ''} data-page="${state.currentPage + 1}">›</button>`
 
     btns.innerHTML = html
   }
@@ -202,6 +255,10 @@
       showToast('请完整填写邮箱、密码、Client ID 和 Refresh Token')
       return
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showToast('请输入有效的邮箱地址')
+      return
+    }
 
     const data = getEmailData()
     if (!data[index]) return
@@ -210,36 +267,54 @@
       showToast('该邮箱已存在，不能重复保存')
       return
     }
-    data[index] = { email, password, clientId, refreshToken }
-    setEmailData(data)
-    state.emailData = data
-    state.editingAccountIndex = null
-    closeModal('edit-account-modal')
-    render()
-    showToast('账号信息已更新')
+    if (email.length > 320 || password.length > 1000 || clientId.length > 200 || refreshToken.length > 20000) {
+      showToast('账号字段过长，请缩短后重试')
+      return
+    }
+    data[index] = { ...data[index], email, password, clientId, refreshToken }
+    try {
+      setEmailData(data)
+      state.emailData = data
+      state.editingAccountIndex = null
+      closeModal('edit-account-modal')
+      render()
+      showToast('账号信息已更新')
+    } catch (error) {
+      showToast(error.message)
+    }
   }
 
   const deleteEmail = (index) => {
     const data = getEmailData()
+    if (!data[index]) return
     data.splice(index, 1)
-    setEmailData(data)
-    state.emailData = data
-    state.selectedItems = []
-    render()
+    try {
+      setEmailData(data)
+      state.emailData = data
+      state.selectedItems = []
+      render()
+      showToast('账号已删除')
+    } catch (error) {
+      showToast(error.message)
+    }
   }
 
   const copyToClipboard = async (text) => {
     if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-      return
+      try {
+        await navigator.clipboard.writeText(text)
+        return
+      } catch (_) { /* 继续尝试兼容复制方案 */ }
     }
     const textarea = document.createElement('textarea')
     textarea.value = text
-    textarea.style.cssText = 'position:fixed;opacity:0;pointer-events:none;'
+    textarea.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;pointer-events:none;'
+    textarea.setAttribute('readonly', '')
     document.body.appendChild(textarea)
+    textarea.focus()
     textarea.select()
-    const copied = document.execCommand('copy')
-    textarea.remove()
+    let copied = false
+    try { copied = document.execCommand('copy') } finally { textarea.remove() }
     if (!copied) throw new Error('复制失败')
   }
 
@@ -250,7 +325,7 @@
       .sort((a, b) => a - b)
       .map(index => data[index])
       .filter(Boolean)
-      .map(item => [item.email, item.password, item.clientId, item.refreshToken].join('----'))
+      .map(item => [item.email, item.password, item.clientId, item.refreshToken].join(item.delimiter || '----'))
 
     if (!rows.length) return
     try {
@@ -274,12 +349,16 @@
   const executeBatchDelete = () => {
     const selectedIndexes = new Set(state.selectedItems.map(Number))
     const data = getEmailData().filter((item, index) => !selectedIndexes.has(index))
-    setEmailData(data)
-    state.emailData = data
-    state.selectedItems = []
-    closeModal('delete-confirm-modal')
-    render()
-    showToast('删除成功')
+    try {
+      setEmailData(data)
+      state.emailData = data
+      state.selectedItems = []
+      closeModal('delete-confirm-modal')
+      render()
+      showToast('删除成功')
+    } catch (error) {
+      showToast(error.message)
+    }
   }
 
   /* ---------- 导入 ---------- */
@@ -298,6 +377,8 @@
   }
 
   const importEmails = async () => {
+    if (state.importing) return
+
     const delimiter = $('#import-delimiter').value.trim() || '----'
     const pastedText = $('#import-text').value.trim()
     const files = [...$('#import-file').files, ...$('#import-folder').files]
@@ -306,12 +387,27 @@
       showToast('请粘贴账号内容，或选择文件/文件夹')
       return
     }
+    if (delimiter.length > 32 || /[\r\n]/.test(delimiter)) {
+      showToast('分隔符不能包含换行且不能超过 32 个字符')
+      return
+    }
+    const totalSize = new Blob([pastedText]).size + files.reduce((sum, file) => sum + file.size, 0)
+    if (totalSize > CONFIG.MAX_IMPORT_SIZE) {
+      showToast('导入内容不能超过 5 MB')
+      return
+    }
 
+    const confirmButton = $('#import-confirm')
+    state.importing = true
+    confirmButton.disabled = true
+    confirmButton.textContent = '导入中…'
     try {
       showLoading()
       const fileContents = await Promise.all(files.map(readFileAsText))
       const content = [pastedText, ...fileContents].filter(Boolean).join('\n')
-      const lines = content.split(/\r?\n/)
+      const lines = content.split(/\r\n?|\n/)
+      if (lines.length > CONFIG.MAX_IMPORT_LINES) throw new Error('一次最多导入 10000 行账号')
+
       const data = getEmailData()
       const existingEmails = new Set(data.map(item => String(item.email || '').trim().toLowerCase()))
       let count = 0
@@ -330,7 +426,8 @@
 
         const [email, password, clientId, ...tokenParts] = fields
         const refreshToken = tokenParts.join(delimiter).trim()
-        if (!email || !password || !clientId || !refreshToken) {
+        const validEmail = email.length <= 320 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+        if (!validEmail || !password || password.length > 1000 || !clientId || clientId.length > 200 || !refreshToken || refreshToken.length > 20000) {
           skipped++
           return
         }
@@ -342,14 +439,14 @@
         }
 
         existingEmails.add(emailKey)
-        data.push({ email, password, clientId, refreshToken })
+        data.push({ email, password, clientId, refreshToken, delimiter })
         count++
       })
 
       if (count === 0) {
         showToast(duplicates > 0 && skipped === 0
-          ? `检测到 ${duplicates} 条重复账号，未重复导入`
-          : `没有可导入的有效账号，请检查分隔符（当前：${delimiter}）`)
+          ? '检测到 ' + duplicates + ' 条重复账号，未重复导入'
+          : '没有可导入的有效账号，请检查分隔符（当前：' + delimiter + '）')
         return
       }
 
@@ -359,70 +456,90 @@
       closeModal('import-modal')
       resetImportForm()
       render()
-      const details = [duplicates ? `跳过 ${duplicates} 条重复账号` : '', skipped ? `跳过 ${skipped} 条无效数据` : ''].filter(Boolean).join('，')
-      showToast(`成功导入 ${count} 条${details ? `，${details}` : ''}`)
-    } catch (err) {
-      showToast(err.message || '读取文件失败')
+      const details = [duplicates ? '跳过 ' + duplicates + ' 条重复账号' : '', skipped ? '跳过 ' + skipped + ' 条无效数据' : ''].filter(Boolean).join('，')
+      showToast('成功导入 ' + count + ' 条' + (details ? '，' + details : ''))
+    } catch (error) {
+      showToast(error.message || '读取文件失败')
     } finally {
+      state.importing = false
+      confirmButton.disabled = false
+      confirmButton.textContent = '导入'
       hideLoading()
     }
   }
 
   /* ---------- 邮件列表 ---------- */
-  const loadMailList = (refreshToken, clientId, email, mailbox) => {
+  const loadMailList = async (refreshToken, clientId, email, mailbox) => {
+    state.mailRequestController?.abort()
+    const controller = new AbortController()
+    const requestId = ++state.mailRequestId
+    state.mailRequestController = controller
     state.currentMailbox = { refreshToken, clientId, email, mailbox }
     state.currentMailPage = 1
-    $('#current-mailbox-label').textContent = `${email} · ${mailbox === 'Junk' ? '垃圾箱' : '收件箱'}`
+    $('#current-mailbox-label').textContent = email + ' · ' + (mailbox === 'Junk' ? '垃圾箱' : '收件箱')
     showLoading()
-    const params = new URLSearchParams({
-      refresh_token: refreshToken,
-      client_id: clientId,
-      email,
-      mailbox,
-      response_type: 'json'
-    })
-    const apiUrl = `${CONFIG.API_BASE}?${params.toString()}`
 
-    fetch(apiUrl)
-      .then(r => {
-        if (!r.ok) {
-          if (r.status === 500) {
-            return r.json().then(d => {
-              if (d.error === 'Nothing to fetch') {
-                state.mailData = []
-                showMailSection()
-                renderMailTable()
-                return Promise.resolve()
-              }
-              throw new Error(d.error || '服务器错误')
-            })
-          }
-          throw new Error(`请求失败: ${r.status}`)
-        }
-        return r.json()
-      })
-      .then(d => {
-        if (d) {
-          state.mailData = d
-          showMailSection()
-          renderMailTable()
-        }
-      })
-      .catch(err => showToast(err.message || '加载失败'))
+    let timedOut = false
+    const timeout = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, CONFIG.MAIL_REQUEST_TIMEOUT)
 
-      .finally(() => hideLoading())
+    try {
+      const response = await fetch(CONFIG.API_BASE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken, client_id: clientId, email, mailbox }),
+        signal: controller.signal
+      })
+      let data
+      try { data = await response.json() } catch (_) { throw new Error('邮件接口返回格式错误') }
+      if (!response.ok) throw new Error(data?.error || ('请求失败（' + response.status + '）'))
+      if (!Array.isArray(data)) throw new Error('邮件接口返回格式错误')
+      if (requestId !== state.mailRequestId) return
+
+      state.mailData = data
+      showMailSection()
+      renderMailTable()
+    } catch (error) {
+      if (error.name === 'AbortError' && !timedOut) return
+      if (requestId === state.mailRequestId) showToast(timedOut ? '邮件加载超时，请稍后重试' : (error.message || '加载失败'))
+    } finally {
+      clearTimeout(timeout)
+      if (requestId === state.mailRequestId) {
+        state.mailRequestController = null
+        hideLoading()
+      }
+    }
+  }
+
+  const scrollPageTop = () => {
+    if (window.innerWidth < 768) window.scrollTo({ top: 0, behavior: 'auto' })
   }
 
   const showMailSection = () => {
-    $$('.section').forEach(s => s.classList.remove('active'))
+    queryAll('.section').forEach(s => s.classList.remove('active'))
     $('#mail-section').classList.add('active')
+    scrollPageTop()
   }
 
   const showAccountSection = () => {
-    $$('.section').forEach(s => s.classList.remove('active'))
+    state.mailRequestId++
+    state.mailRequestController?.abort()
+    state.mailRequestController = null
+    hideLoading()
+    queryAll('.section').forEach(s => s.classList.remove('active'))
     $('#account-section').classList.add('active')
     state.mailData = []
     state.currentMailPage = 1
+    state.currentMailbox = null
+    scrollPageTop()
+  }
+
+  const formatMailDate = value => {
+    if (!value) return ''
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('zh-CN', { hour12: false })
   }
 
   const renderMailTable = () => {
@@ -440,13 +557,13 @@
       return
     }
 
-    tbody.innerHTML = pageData.map(item => `
-      <tr>
+    tbody.innerHTML = pageData.map((item, index) => `
+      <tr tabindex="0" data-mail-index="${start + index}" aria-label="打开邮件：${escapeHtml(item.subject || '无主题')}">
         <td class="mail-address" title="${escapeHtml(item.send || '')}">${escapeHtml(item.send || '未知发件人')}</td>
         <td class="mail-address" title="${escapeHtml(item.to || state.currentMailbox?.email || '')}">${escapeHtml(item.to || state.currentMailbox?.email || '未知收件人')}</td>
         <td class="mail-subject">${escapeHtml(item.subject || '(无主题)')}</td>
-        <td class="mail-date">${escapeHtml(item.date || '')}</td>
-        <td><button class="btn btn-sm" data-action="view">查看</button></td>
+        <td class="mail-date">${escapeHtml(formatMailDate(item.date))}</td>
+        <td><button type="button" class="btn btn-sm" data-action="view">查看</button></td>
       </tr>
     `).join('')
 
@@ -462,13 +579,15 @@
       return
     }
 
-    let html = `<button ${state.currentMailPage <= 1 ? 'disabled' : ''} data-page="${state.currentMailPage - 1}">‹</button>`
+    let html = `<button type="button" aria-label="上一页" ${state.currentMailPage <= 1 ? 'disabled' : ''} data-page="${state.currentMailPage - 1}">‹</button>`
 
-    for (let i = 1; i <= totalPages; i++) {
-      html += `<button class="${i === state.currentMailPage ? 'active' : ''}" data-page="${i}">${i}</button>`
-    }
+    getPaginationItems(state.currentMailPage, totalPages).forEach(item => {
+      html += item === 'ellipsis'
+        ? '<span class="pagination-ellipsis" aria-hidden="true">…</span>'
+        : `<button type="button" class="${item === state.currentMailPage ? 'active' : ''}" data-page="${item}"${item === state.currentMailPage ? ' aria-current="page"' : ''}>${item}</button>`
+    })
 
-    html += `<button ${state.currentMailPage >= totalPages ? 'disabled' : ''} data-page="${state.currentMailPage + 1}">›</button>`
+    html += `<button type="button" aria-label="下一页" ${state.currentMailPage >= totalPages ? 'disabled' : ''} data-page="${state.currentMailPage + 1}">›</button>`
 
     btns.innerHTML = html
   }
@@ -488,9 +607,9 @@
         ;(doc.head || doc.documentElement).appendChild(style)
       }
       // 外层反色让白底邮件变暗；媒体元素再次反色，避免图片和视频颜色失真。
-      style.textContent = isDark
-        ? 'img, picture, video, canvas { filter: invert(1) hue-rotate(180deg) !important; }'
-        : ''
+      const layoutCss = 'html, body { max-width: 100% !important; overflow-x: hidden !important; } img, picture, video, canvas, svg, table { max-width: 100% !important; } img, video { height: auto !important; } pre { white-space: pre-wrap !important; overflow-wrap: anywhere !important; }'
+      const darkCss = 'img, picture, video, canvas { filter: invert(1) hue-rotate(180deg) !important; }'
+      style.textContent = isDark ? `${layoutCss} ${darkCss}` : layoutCss
     } catch (_) { /* 邮件正文无法访问时仍保留 iframe 外层暗色处理 */ }
   }
 
@@ -498,10 +617,10 @@
     const item = state.mailData[index]
     if (!item) return
 
-    $('#mail-modal-title').textContent = item.subject
+    $('#mail-modal-title').textContent = item.subject || '（无主题）'
     $('#mail-modal-sender').textContent = item.send || '未知发件人'
     $('#mail-modal-recipient').textContent = item.to || state.currentMailbox?.email || '未知收件人'
-    $('#mail-modal-date').textContent = item.date || ''
+    $('#mail-modal-date').textContent = formatMailDate(item.date)
 
     const content = $('#mail-modal-content')
     content.replaceChildren()
@@ -510,6 +629,7 @@
       // 用 sandbox iframe 隔离渲染邮件 HTML，阻止脚本访问 localStorage 等父页面资源
       const iframe = document.createElement('iframe')
       iframe.setAttribute('sandbox', 'allow-same-origin')
+      iframe.setAttribute('title', '邮件正文')
       iframe.setAttribute('referrerpolicy', 'no-referrer')
       iframe.srcdoc = item.html
       iframe.setAttribute('scrolling', 'no')
@@ -519,13 +639,17 @@
         try {
           const doc = iframe.contentDocument
           syncMailFrameTheme(iframe)
+          let resizeFrame = 0
           const resize = () => {
-            const h = Math.max(doc?.body?.scrollHeight || 0, doc?.documentElement?.scrollHeight || 0, 400)
-            iframe.style.height = h + 'px'
+            cancelAnimationFrame(resizeFrame)
+            resizeFrame = requestAnimationFrame(() => {
+              const h = Math.max(doc?.body?.scrollHeight || 0, doc?.documentElement?.scrollHeight || 0, 400)
+              iframe.style.height = h + 'px'
+            })
           }
           resize()
           doc?.querySelectorAll('img').forEach(img => img.addEventListener('load', resize, { once: true }))
-          requestAnimationFrame(resize)
+          if ('ResizeObserver' in window && doc?.documentElement) new ResizeObserver(resize).observe(doc.documentElement)
           setTimeout(resize, 250)
           setTimeout(resize, 1000)
         } catch (e) { /* 无法读取时保留安全的默认高度 */ }
@@ -673,15 +797,18 @@
       render()
     })
 
-    // 邮件表格操作
-    $('#mail-table tbody').addEventListener('click', e => {
-      const tr = e.target.closest('tr')
-      if (!tr || tr.querySelector('.empty')) return
-
-      const rows = [...tr.parentNode.children]
-      const index = rows.indexOf(tr)
-      const globalIndex = (state.currentMailPage - 1) * CONFIG.MAIL_ITEMS_PER_PAGE + index
-      viewMailDetail(globalIndex)
+    // 邮件整行可用鼠标或键盘打开
+    const openMailRow = target => {
+      const tr = target.closest('tr[data-mail-index]')
+      if (!tr) return
+      viewMailDetail(Number(tr.dataset.mailIndex))
+    }
+    $('#mail-table tbody').addEventListener('click', e => openMailRow(e.target))
+    $('#mail-table tbody').addEventListener('keydown', e => {
+      if (e.target.closest('button')) return
+      if (e.key !== 'Enter' && e.key !== ' ') return
+      e.preventDefault()
+      openMailRow(e.target)
     })
 
     // 邮件分页
@@ -715,7 +842,7 @@
     $('#import-confirm').addEventListener('click', importEmails)
 
     // 关闭模态框
-    $$('.modal-overlay').forEach(overlay => {
+    queryAll('.modal-overlay').forEach(overlay => {
       overlay.addEventListener('click', e => {
         if (e.target === overlay) closeAllModals()
       })
@@ -726,7 +853,7 @@
   const applyTheme = (theme) => {
     document.documentElement.dataset.theme = theme
     syncMailFrameTheme($('#mail-modal-content iframe'))
-    localStorage.setItem('mailTheme', theme)
+    try { localStorage.setItem('mailTheme', theme) } catch (_) {}
     const toggle = $('#theme-toggle')
     if (toggle) toggle.setAttribute('aria-label', theme === 'dark' ? '切换到明亮模式' : '切换到暗色模式')
   }
@@ -739,6 +866,7 @@
     render()
     initUpload()
     bindEvents()
+    applyTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
 
     // 暴露全局
     window.mailApp = {

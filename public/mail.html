@@ -5,15 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>邮箱系统</title>
   <link rel="stylesheet" href="/mail.css">
-  <script>document.documentElement.dataset.theme = localStorage.getItem('mailTheme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')</script>
+  <script>
+    ;(() => {
+      let savedTheme = ''
+      try { savedTheme = localStorage.getItem('mailTheme') || '' } catch (_) {}
+      document.documentElement.dataset.theme = savedTheme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+    })()
+  </script>
 </head>
 <body>
 
-  <div class="loading-overlay" id="loading-overlay">
+  <div class="loading-overlay" id="loading-overlay" role="status" aria-live="polite" aria-label="正在加载" aria-hidden="true">
     <div class="spinner"></div>
   </div>
 
-  <div id="toast" class="toast"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <div class="container">
     <header class="header">
@@ -37,10 +43,10 @@
         <div class="toolbar" id="toolbar">
           <label class="toolbar-field">
             <span>搜索账号</span>
-            <input type="text" class="search-input" id="search-input" placeholder="输入邮箱地址">
+            <input type="search" class="search-input" id="search-input" maxlength="320" autocomplete="off" placeholder="输入邮箱地址">
           </label>
           <div class="toolbar-actions">
-            <button class="btn btn-primary" data-action="import" title="粘贴文本或选择文件导入邮箱账号">批量导入</button>
+            <button type="button" class="btn btn-primary" data-action="import" title="粘贴文本或选择文件导入邮箱账号">批量导入</button>
           </div>
         </div>
 
@@ -48,7 +54,7 @@
           <table class="table" id="email-table">
             <thead>
               <tr>
-                <th class="check-col"><input type="checkbox" id="select-all"></th>
+                <th class="check-col"><input type="checkbox" id="select-all" aria-label="选择全部筛选结果"></th>
                 <th>账号</th>
                 <th>Client ID</th>
                 <th>Refresh Token</th>
@@ -67,8 +73,8 @@
               <button class="btn btn-sm btn-danger" type="button" data-action="delete">批量删除</button>
             </div>
           </div>
-          <div class="pagination" id="pagination-btns"></div>
-          <select class="per-page" id="per-page">
+          <div class="pagination" id="pagination-btns" role="navigation" aria-label="账号分页"></div>
+          <select class="per-page" id="per-page" aria-label="每页显示条数">
             <option value="10">10 条/页</option>
             <option value="20">20 条/页</option>
             <option value="50">50 条/页</option>
@@ -81,9 +87,9 @@
       <div id="mail-section" class="section">
         <div class="mail-section">
           <div class="mail-header">
-            <button class="back-btn" id="back-btn">← 返回账号</button>
-            <div class="mail-heading-copy"><span class="eyebrow">MESSAGES</span><h2>邮件列表</h2><p id="current-mailbox-label">查看当前邮箱中的邮件</p></div>
-            <button class="btn btn-primary mail-refresh-btn" id="refresh-mails">↻ 刷新邮件</button>
+            <button type="button" class="back-btn" id="back-btn">← 返回账号</button>
+            <div class="mail-heading-copy"><span class="eyebrow">MESSAGES</span><h2>邮件列表</h2><p id="current-mailbox-label" aria-live="polite">查看当前邮箱中的邮件</p></div>
+            <button type="button" class="btn btn-primary mail-refresh-btn" id="refresh-mails">↻ 刷新邮件</button>
           </div>
 
           <div class="table-wrap">
@@ -102,7 +108,7 @@
           </div>
 
           <div class="pagination-wrap">
-            <div class="pagination" id="mail-pagination-btns"></div>
+            <div class="pagination" id="mail-pagination-btns" role="navigation" aria-label="邮件分页"></div>
           </div>
         </div>
       </div>
@@ -114,16 +120,16 @@
   </div>
 
   <!-- 导入弹窗 -->
-  <div class="modal-overlay import-modal" id="import-modal">
-    <div class="modal">
+  <div class="modal-overlay import-modal" id="import-modal" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
       <div class="modal-header">
-        <h3>导入账号</h3>
+        <h3 id="import-modal-title">导入账号</h3>
       <button class="modal-close" type="button" data-close-modal aria-label="关闭弹窗" title="关闭">×</button>
       </div>
       <div class="modal-body">
         <div class="form-group">
           <label for="import-text">账号内容（每行一个）</label>
-          <textarea id="import-text" rows="9" placeholder="邮箱----密码----Client ID----Refresh Token&#10;邮箱----密码----Client ID----Refresh Token"></textarea>
+          <textarea id="import-text" rows="9" maxlength="5242880" placeholder="邮箱----密码----Client ID----Refresh Token&#10;邮箱----密码----Client ID----Refresh Token"></textarea>
           <p class="form-help">可直接粘贴账号；也可以在下方选择文件或文件夹，系统会合并读取其中的文件。</p>
         </div>
         <div class="import-file-actions">
@@ -135,55 +141,55 @@
         </div>
         <div class="form-group">
           <label for="import-delimiter">分隔符</label>
-          <input type="text" id="import-delimiter" value="----" placeholder="默认使用 ----">
+          <input type="text" id="import-delimiter" value="----" maxlength="32" placeholder="默认使用 ----">
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn" data-close-modal>取消</button>
-        <button class="btn btn-primary" id="import-confirm">导入</button>
+        <button type="button" class="btn" data-close-modal>取消</button>
+        <button type="button" class="btn btn-primary" id="import-confirm">导入</button>
       </div>
     </div>
   </div>
 
 
   <!-- 编辑账号弹窗 -->
-  <div class="modal-overlay edit-account-modal" id="edit-account-modal">
-    <div class="modal">
+  <div class="modal-overlay edit-account-modal" id="edit-account-modal" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-account-modal-title">
       <div class="modal-header">
         <span class="eyebrow">ACCOUNT DETAILS</span>
-        <h3>编辑账号</h3>
+        <h3 id="edit-account-modal-title">编辑账号</h3>
       <button class="modal-close" type="button" data-close-modal aria-label="关闭弹窗" title="关闭">×</button>
       </div>
       <div class="modal-body account-edit-form">
         <div class="form-group">
           <label for="edit-email">邮箱</label>
-          <input type="email" id="edit-email" autocomplete="off">
+          <input type="email" id="edit-email" maxlength="320" autocomplete="off">
         </div>
         <div class="form-group">
           <label for="edit-password">密码 / Key</label>
-          <input type="text" id="edit-password" autocomplete="off">
+          <input type="text" id="edit-password" maxlength="1000" autocomplete="off">
         </div>
         <div class="form-group">
           <label for="edit-client-id">Client ID</label>
-          <input type="text" id="edit-client-id" autocomplete="off">
+          <input type="text" id="edit-client-id" maxlength="200" autocomplete="off">
         </div>
         <div class="form-group">
           <label for="edit-refresh-token">Refresh Token</label>
-          <textarea id="edit-refresh-token" rows="6"></textarea>
+          <textarea id="edit-refresh-token" rows="6" maxlength="20000"></textarea>
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn" id="edit-account-cancel">取消</button>
-        <button class="btn btn-primary" id="edit-account-save">保存修改</button>
+        <button type="button" class="btn" id="edit-account-cancel">取消</button>
+        <button type="button" class="btn btn-primary" id="edit-account-save">保存修改</button>
       </div>
     </div>
   </div>
 
   <!-- 批量删除确认弹窗 -->
-  <div class="modal-overlay" id="delete-confirm-modal">
-    <div class="modal">
+  <div class="modal-overlay" id="delete-confirm-modal" aria-hidden="true">
+    <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-confirm-modal-title">
       <div class="modal-header">
-        <h3>确认删除账号</h3>
+        <h3 id="delete-confirm-modal-title">确认删除账号</h3>
       <button class="modal-close" type="button" data-close-modal aria-label="关闭弹窗" title="关闭">×</button>
       </div>
       <div class="modal-body">
@@ -191,15 +197,15 @@
         <p>删除后本地保存的账号信息将无法恢复。</p>
       </div>
       <div class="modal-footer">
-        <button class="btn" id="delete-confirm-cancel">取消</button>
-        <button class="btn btn-danger" id="delete-confirm-submit">确认删除</button>
+        <button type="button" class="btn" id="delete-confirm-cancel">取消</button>
+        <button type="button" class="btn btn-danger" id="delete-confirm-submit">确认删除</button>
       </div>
     </div>
   </div>
 
   <!-- 邮件详情弹窗 -->
-  <div class="modal-overlay mail-modal" id="mail-modal">
-    <div class="modal">
+  <div class="modal-overlay mail-modal" id="mail-modal" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mail-modal-title">
       <div class="modal-header mail-detail-header">
         <span class="eyebrow">MESSAGE DETAIL</span>
         <h3 id="mail-modal-title"></h3>
@@ -214,7 +220,7 @@
         <div class="mail-content" id="mail-modal-content"></div>
       </div>
       <div class="modal-footer">
-        <button class="btn" data-close-modal>关闭</button>
+        <button type="button" class="btn" data-close-modal>关闭</button>
       </div>
     </div>
   </div>

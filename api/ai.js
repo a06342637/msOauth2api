@@ -1,110 +1,105 @@
-const API_KEY = process.env.AI_API_KEY
-const API_URL = process.env.AI_API_URL
-const MODEL = process.env.AI_MODEL
-const PASSWORD = process.env.PASSWORD
+'use strict'
 
-export const config = {
-    runtime: 'nodejs'
-}
+const { acceptRequest, sendHandlerError, verifyPassword, PublicError } = require('../lib/api-utils')
 
-function sendEvent(controller, encoder, event, data) {
-    controller.enqueue(encoder.encode(`event: ${event}\n`))
-    controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
-}
+const MAX_BODY_LENGTH = 1024 * 1024
+const AI_TIMEOUT_MS = 50000
 
-export default {
-    async fetch(request) {
-        const encoder = new TextEncoder()
-
-        if (request.method !== 'POST') {
-            return new Response(JSON.stringify({ error: '只支持 POST 请求' }), {
-                status: 405,
-                headers: { 'Content-Type': 'application/json' }
-            })
-        }
-
-        if (!API_KEY) {
-            return new Response(JSON.stringify({ error: 'AI_API_KEY 未配置' }), {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' }
-            })
-        }
-
-        let body
-        try {
-            body = await request.json()
-        } catch {
-            return new Response(JSON.stringify({ error: '无效的 JSON' }), {
-                status: 400,
-                headers: { 'Content-Type': 'application/json' }
-            })
-        }
-
-        const { messages, password } = body
-
-        if (!messages) {
-            return new Response(JSON.stringify({ error: '缺少 messages 参数' }), {
-                status: 400,
-                headers: { 'Content-Type': 'application/json' }
-            })
-        }
-
-        if (PASSWORD && password !== PASSWORD) {
-            return new Response(JSON.stringify({ error: '密码验证失败' }), {
-                status: 401,
-                headers: { 'Content-Type': 'application/json' }
-            })
-        }
-
-        const stream = new ReadableStream({
-            async start(controller) {
-                controller.enqueue(encoder.encode(': connected\n\n'))
-
-                try {
-                    sendEvent(controller, encoder, 'status', { message: '正在连接 AI...' })
-
-                    const response = await fetch(`${API_URL}/v1/chat/completions`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${API_KEY}`
-                        },
-                        body: JSON.stringify({
-                            model: MODEL,
-                            messages: messages,
-                            stream: true
-                        })
-                    })
-
-                    if (!response.ok) {
-                        const errorText = await response.text()
-                        throw new Error(`AI 请求失败: ${response.status} - ${errorText}`)
-                    }
-
-                    const reader = response.body.getReader()
-
-                    while (true) {
-                        const { done, value } = await reader.read()
-                        if (done) break
-                        controller.enqueue(value)
-                    }
-
-                    controller.close()
-                } catch (error) {
-                    console.error('AI API Error:', error)
-                    sendEvent(controller, encoder, 'error', { error: error.message })
-                    controller.close()
-                }
-            }
-        })
-
-        return new Response(stream, {
-            headers: {
-                'Content-Type': 'text/event-stream; charset=utf-8',
-                'Cache-Control': 'no-cache, no-transform',
-                'Connection': 'keep-alive',
-                'X-Accel-Buffering': 'no'
-            }
-        })
+function waitForDrain(res) {
+  if (res.destroyed || res.writableEnded) return Promise.resolve(false)
+  return new Promise(resolve => {
+    const cleanup = () => {
+      res.off('drain', onDrain)
+      res.off('close', onClose)
     }
+    const onDrain = () => { cleanup(); resolve(true) }
+    const onClose = () => { cleanup(); resolve(false) }
+    res.once('drain', onDrain)
+    res.once('close', onClose)
+  })
+}
+
+function getEndpoint(baseUrl) {
+  let url
+  try { url = new URL(baseUrl) } catch (_) { throw new PublicError('AI_API_URL 配置无效', 500) }
+  if (!['http:', 'https:'].includes(url.protocol)) throw new PublicError('AI_API_URL 配置无效', 500)
+  const base = url.toString().replace(/\/+$/, '')
+  return /\/v1$/i.test(base) ? `${base}/chat/completions` : `${base}/v1/chat/completions`
+}
+
+module.exports = async (req, res) => {
+  if (!acceptRequest(req, res, ['POST'])) return
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS)
+  let clientClosed = false
+  const onClientClose = () => {
+    clientClosed = true
+    controller.abort()
+  }
+  res.once('close', onClientClose)
+
+  try {
+    const apiKey = process.env.AI_API_KEY
+    const apiUrl = process.env.AI_API_URL
+    const model = process.env.AI_MODEL
+    if (!apiKey || !apiUrl || !model) throw new PublicError('AI 服务未完整配置', 503)
+
+    const source = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}
+    verifyPassword(source, 'PASSWORD', 'password')
+    const { messages } = source
+    if (!Array.isArray(messages) || messages.length === 0 || messages.length > 100) {
+      throw new PublicError('messages 必须是包含 1 到 100 条消息的数组')
+    }
+    if (messages.some(message => !message || typeof message !== 'object' || typeof message.role !== 'string' || !('content' in message))) {
+      throw new PublicError('messages 格式无效')
+    }
+    let serializedMessages
+    try { serializedMessages = JSON.stringify(messages) } catch (_) { throw new PublicError('messages 内容无法序列化') }
+    if (serializedMessages.length > MAX_BODY_LENGTH) throw new PublicError('messages 内容过大', 413)
+
+    const upstream = await fetch(getEndpoint(apiUrl), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: `{"model":${JSON.stringify(model)},"messages":${serializedMessages},"stream":true}`,
+      signal: controller.signal
+    })
+
+    if (!upstream.ok || !upstream.body) {
+      try { await upstream.body?.cancel() } catch (_) {}
+      throw new PublicError(`AI 服务请求失败（${upstream.status}）`, 502)
+    }
+
+    res.statusCode = 200
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+    res.setHeader('Cache-Control', 'no-cache, no-transform')
+    res.setHeader('Connection', 'keep-alive')
+    res.setHeader('X-Accel-Buffering', 'no')
+    res.flushHeaders?.()
+    res.write(': connected\n\n')
+
+    const reader = upstream.body.getReader()
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (clientClosed) return
+      if (!res.write(Buffer.from(value)) && !await waitForDrain(res)) return
+    }
+    return res.end()
+  } catch (error) {
+    if (clientClosed) return
+    if (error?.name === 'AbortError') error = new PublicError('AI 服务请求超时', 504)
+    if (res.headersSent) {
+      console.error('AI stream error', error)
+      res.write(`event: error\ndata: ${JSON.stringify({ error: error instanceof PublicError ? error.message : 'AI 服务请求失败' })}\n\n`)
+      return res.end()
+    }
+    return sendHandlerError(res, error, 'AI 服务请求失败')
+  } finally {
+    clearTimeout(timer)
+    res.off('close', onClientClose)
+  }
 }
