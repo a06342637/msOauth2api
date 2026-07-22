@@ -14,8 +14,12 @@
     MAIL_DETAIL_API: '/api/mail-detail',
     MAIL_REQUEST_TIMEOUT: 30000,
     MAIL_DETAIL_TIMEOUT: 20000,
+    MAIL_DETAIL_CACHE_MAX: 20,
+    MAIL_PREFETCH_MAX: 4,
     MAX_IMPORT_SIZE: 5 * 1024 * 1024,
-    MAX_IMPORT_LINES: 10000
+    MAX_IMPORT_LINES: 10000,
+    MAX_IMPORT_FILES: 1000,
+    IMPORT_FILE_CONCURRENCY: 6
   }
 
   const state = {
@@ -34,14 +38,25 @@
     mailDetailCache: new Map(),
     mailDetailRequests: new Map(),
     mailDetailViewId: 0,
+    mailDetailContextId: 0,
     mailPrefetchTimer: null,
-    importing: false
+    mailPrefetchActive: 0,
+    importing: false,
+    importOperationId: 0
   }
 
   const $ = (sel, ctx = document) => ctx.querySelector(sel)
   const queryAll = (sel, ctx = document) => [...ctx.querySelectorAll(sel)]
   let toastTimer = null
   let lastFocusedElement = null
+
+  const resetAccountEditorForm = () => {
+    state.editingAccountIndex = null
+    ;['#edit-email', '#edit-password', '#edit-client-id', '#edit-refresh-token'].forEach(selector => {
+      const field = $(selector)
+      if (field) field.value = ''
+    })
+  }
 
   const clearMailContent = () => {
     const content = $('#mail-modal-content')
@@ -52,8 +67,10 @@
   }
 
   const abortMailDetailRequests = () => {
+    state.mailDetailContextId++
     clearTimeout(state.mailPrefetchTimer)
     state.mailPrefetchTimer = null
+    state.mailPrefetchActive = 0
     state.mailDetailRequests.forEach(entry => entry.controller.abort())
     state.mailDetailRequests.clear()
     state.mailDetailCache.clear()
@@ -61,54 +78,90 @@
     clearMailContent()
   }
 
-  /* ---------- Loading ---------- */
-  const showLoading = () => {
-    const overlay = $('#loading-overlay')
-    overlay.style.display = 'flex'
-    overlay.setAttribute('aria-hidden', 'false')
-  }
-  const hideLoading = () => {
-    const overlay = $('#loading-overlay')
-    overlay.style.display = 'none'
-    overlay.setAttribute('aria-hidden', 'true')
+  /* ---------- 模态框 ---------- */
+  const isModalOpen = modal => modal?.getAttribute('aria-hidden') === 'false'
+
+  const cleanupModalState = id => {
+    if (id === 'import-modal') {
+      state.importOperationId++
+      state.importing = false
+      const confirmButton = $('#import-confirm')
+      if (confirmButton) {
+        confirmButton.disabled = false
+        confirmButton.textContent = '导入'
+      }
+      resetImportForm()
+    } else if (id === 'edit-account-modal') {
+      resetAccountEditorForm()
+    } else if (id === 'delete-confirm-modal') {
+      const count = $('#delete-confirm-count')
+      if (count) count.textContent = '0'
+    } else if (id === 'mail-modal') {
+      state.mailDetailViewId++
+      clearMailContent()
+      ;['#mail-modal-title', '#mail-modal-sender', '#mail-modal-recipient', '#mail-modal-date'].forEach(selector => {
+        const field = $(selector)
+        if (field) field.textContent = ''
+      })
+    }
   }
 
-  /* ---------- 模态框 ---------- */
   const openModal = (id) => {
     const modal = $(`#${id}`)
-    if (!modal) return
+    if (!modal || isModalOpen(modal)) return
     lastFocusedElement = document.activeElement
+    const modalBody = modal.querySelector('.modal-body')
+    if (modalBody) modalBody.scrollTop = 0
     modal.style.display = 'flex'
     modal.setAttribute('aria-hidden', 'false')
     document.body.classList.add('modal-open')
     requestAnimationFrame(() => modal.querySelector('.modal-close, input, textarea, button')?.focus())
   }
+
   const closeModal = (id) => {
     const modal = $(`#${id}`)
-    if (!modal) return
+    if (!modal || !isModalOpen(modal)) return
     modal.style.display = 'none'
     modal.setAttribute('aria-hidden', 'true')
-    if (id === 'mail-modal') { state.mailDetailViewId++; clearMailContent() }
-    if (![...document.querySelectorAll('.modal-overlay')].some(el => el.style.display === 'flex')) {
+    cleanupModalState(id)
+    if (!queryAll('.modal-overlay').some(isModalOpen)) {
       document.body.classList.remove('modal-open')
       lastFocusedElement?.focus?.()
       lastFocusedElement = null
     }
   }
+
   const closeAllModals = () => {
-    document.querySelectorAll('.modal-overlay').forEach(el => { el.style.display = 'none'; el.setAttribute('aria-hidden', 'true') })
-    state.mailDetailViewId++
-    clearMailContent()
+    const visibleModals = queryAll('.modal-overlay').filter(isModalOpen)
+    if (!visibleModals.length) return
+    visibleModals.forEach(modal => {
+      modal.style.display = 'none'
+      modal.setAttribute('aria-hidden', 'true')
+      cleanupModalState(modal.id)
+    })
     document.body.classList.remove('modal-open')
     lastFocusedElement?.focus?.()
     lastFocusedElement = null
   }
 
   /* ---------- localStorage ---------- */
+  const normalizeStoredAccount = item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null
+    const rawDelimiter = String(item.delimiter || '----')
+    const delimiter = rawDelimiter.length <= 32 && !/[\r\n]/.test(rawDelimiter) ? rawDelimiter : '----'
+    return {
+      email: String(item.email || '').trim(),
+      password: String(item.password || ''),
+      clientId: String(item.clientId || '').trim(),
+      refreshToken: String(item.refreshToken || '').trim(),
+      delimiter
+    }
+  }
+
   const getEmailData = () => {
     try {
       const data = JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEY) || '[]')
-      return Array.isArray(data) ? data : []
+      return Array.isArray(data) ? data.map(normalizeStoredAccount).filter(Boolean) : []
     } catch (_) {
       try { localStorage.removeItem(CONFIG.STORAGE_KEY) } catch (_) {}
       return []
@@ -154,8 +207,10 @@
     const pageData = filtered.slice(start, end)
 
     const formatRefreshToken = (token) => {
-      if (!token || token.length <= 16) return token || ''
-      return `${token.slice(0, 6)}...${token.slice(-10)}`
+      const value = String(token || '')
+      if (!value) return '—'
+      if (value.length <= 16) return '••••••••••••'
+      return `${value.slice(0, 6)}...${value.slice(-10)}`
     }
 
     if (pageData.length === 0) {
@@ -172,7 +227,7 @@
           </td>
           <td class="text-ellipsis" title="${escapeHtml(item.email)}">${escapeHtml(item.email)}</td>
           <td class="text-ellipsis" title="${escapeHtml(item.clientId)}">${escapeHtml(item.clientId)}</td>
-          <td class="refresh-token" title="${escapeHtml(item.refreshToken)}">${escapeHtml(formatRefreshToken(item.refreshToken))}</td>
+          <td class="refresh-token" title="Refresh Token 已隐藏，点击“编辑”查看完整内容">${escapeHtml(formatRefreshToken(item.refreshToken))}</td>
           <td>
             <div class="actions">
               <button type="button" class="btn btn-sm" data-action="edit">编辑</button>
@@ -395,10 +450,33 @@
     reader.readAsText(file)
   })
 
+  const readFilesAsText = async (files, operationId) => {
+    const contents = new Array(files.length)
+    let cursor = 0
+    let failed = false
+    const worker = async () => {
+      while (!failed) {
+        if (operationId !== state.importOperationId) return
+        const index = cursor++
+        if (index >= files.length) return
+        try {
+          contents[index] = await readFileAsText(files[index])
+        } catch (error) {
+          failed = true
+          throw error
+        }
+      }
+    }
+    const workerCount = Math.min(CONFIG.IMPORT_FILE_CONCURRENCY, files.length)
+    await Promise.all(Array.from({ length: workerCount }, worker))
+    return contents
+  }
+
   const resetImportForm = () => {
     $('#import-text').value = ''
     $('#import-file').value = ''
     $('#import-folder').value = ''
+    $('#import-delimiter').value = '----'
     $('#file-info').textContent = '未选择文件'
   }
 
@@ -417,6 +495,10 @@
       showToast('分隔符不能包含换行且不能超过 32 个字符')
       return
     }
+    if (files.length > CONFIG.MAX_IMPORT_FILES) {
+      showToast('一次最多选择 1000 个文件')
+      return
+    }
     const totalSize = new Blob([pastedText]).size + files.reduce((sum, file) => sum + file.size, 0)
     if (totalSize > CONFIG.MAX_IMPORT_SIZE) {
       showToast('导入内容不能超过 5 MB')
@@ -424,12 +506,14 @@
     }
 
     const confirmButton = $('#import-confirm')
+    const operationId = ++state.importOperationId
     state.importing = true
     confirmButton.disabled = true
     confirmButton.textContent = '导入中…'
     try {
-      showLoading()
-      const fileContents = await Promise.all(files.map(readFileAsText))
+      // 文件读取期间保持弹窗可操作，用户可随时取消导入。
+      const fileContents = await readFilesAsText(files, operationId)
+      if (operationId !== state.importOperationId) return
       const content = [pastedText, ...fileContents].filter(Boolean).join('\n')
       const lines = content.split(/\r\n?|\n/)
       if (lines.length > CONFIG.MAX_IMPORT_LINES) throw new Error('一次最多导入 10000 行账号')
@@ -476,6 +560,7 @@
         return
       }
 
+      if (operationId !== state.importOperationId) return
       setEmailData(data)
       state.emailData = data
       state.currentPage = 1
@@ -485,16 +570,37 @@
       const details = [duplicates ? '跳过 ' + duplicates + ' 条重复账号' : '', skipped ? '跳过 ' + skipped + ' 条无效数据' : ''].filter(Boolean).join('，')
       showToast('成功导入 ' + count + ' 条' + (details ? '，' + details : ''))
     } catch (error) {
-      showToast(error.message || '读取文件失败')
+      if (operationId === state.importOperationId) showToast(error.message || '读取文件失败')
     } finally {
-      state.importing = false
-      confirmButton.disabled = false
-      confirmButton.textContent = '导入'
-      hideLoading()
+      if (operationId === state.importOperationId) {
+        state.importing = false
+        confirmButton.disabled = false
+        confirmButton.textContent = '导入'
+      }
     }
   }
 
   /* ---------- 邮件列表 ---------- */
+  const normalizeMailSummary = item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null
+    if (!['string', 'number'].includes(typeof item.id)) return null
+
+    const id = String(item.id).trim()
+    const provider = String(item.provider || '').trim().toLowerCase()
+    if (!id || id.length > 1000 || !['graph', 'imap'].includes(provider)) return null
+
+    const text = (value, max) => String(value ?? '').slice(0, max)
+    return {
+      id,
+      provider,
+      send: text(item.send, 2000),
+      to: text(item.to, 2000),
+      subject: text(item.subject, 1000),
+      preview: text(item.preview, 4000),
+      date: text(item.date, 200)
+    }
+  }
+
   const renderMailSkeleton = () => {
     const tbody = $('#mail-table tbody')
     tbody.innerHTML = Array.from({ length: 6 }, (_, rowIndex) => `
@@ -532,6 +638,7 @@
 
   const loadMailList = async (refreshToken, clientId, email, mailbox, options = {}) => {
     const isRefresh = options.refresh === true
+    if (isModalOpen($('#mail-modal'))) closeModal('mail-modal')
     state.mailRequestController?.abort()
     const controller = new AbortController()
     const requestId = ++state.mailRequestId
@@ -565,9 +672,11 @@
       try { data = await response.json() } catch (_) { throw new Error('邮件接口返回格式错误') }
       if (!response.ok) throw new Error(data?.error || ('请求失败（' + response.status + '）'))
       if (!Array.isArray(data)) throw new Error('邮件接口返回格式错误')
+      const validData = data.map(normalizeMailSummary).filter(Boolean)
+      if (data.length > 0 && validData.length === 0) throw new Error('邮件接口返回格式错误')
       if (requestId !== state.mailRequestId) return
 
-      state.mailData = data
+      state.mailData = validData
       renderMailTable()
       if (isRefresh) showToast('邮件列表已刷新')
     } catch (error) {
@@ -597,12 +706,12 @@
   }
 
   const showAccountSection = () => {
+    if (isModalOpen($('#mail-modal'))) closeModal('mail-modal')
     state.mailRequestId++
     state.mailRequestController?.abort()
     state.mailRequestController = null
     setMailListLoading(false)
     abortMailDetailRequests()
-    hideLoading()
     queryAll('.section').forEach(s => s.classList.remove('active'))
     $('#account-section').classList.add('active')
     state.mailData = []
@@ -667,11 +776,36 @@
     btns.innerHTML = html
   }
 
-  const mailCacheKey = item => item?.provider && item?.id ? `${item.provider}:${item.id}` : ''
+  const mailCacheKey = (item, mailbox = state.currentMailbox) => {
+    const provider = String(item?.provider || '')
+    const id = String(item?.id || '')
+    if (!mailbox || !provider || !id) return ''
+    return JSON.stringify([
+      String(mailbox.email || '').toLowerCase(),
+      String(mailbox.clientId || ''),
+      String(mailbox.mailbox || ''),
+      provider,
+      id
+    ])
+  }
   const hasMailBody = item => item && (
-    Object.prototype.hasOwnProperty.call(item, 'html') ||
-    Object.prototype.hasOwnProperty.call(item, 'text')
+    typeof item.html === 'string' ||
+    typeof item.text === 'string'
   )
+  const readMailDetailCache = key => {
+    const detail = state.mailDetailCache.get(key)
+    if (!detail) return null
+    state.mailDetailCache.delete(key)
+    state.mailDetailCache.set(key, detail)
+    return detail
+  }
+  const storeMailDetailCache = (key, detail) => {
+    state.mailDetailCache.delete(key)
+    state.mailDetailCache.set(key, detail)
+    while (state.mailDetailCache.size > CONFIG.MAIL_DETAIL_CACHE_MAX) {
+      state.mailDetailCache.delete(state.mailDetailCache.keys().next().value)
+    }
+  }
 
   const syncMailFrameTheme = iframe => {
     if (!iframe) return
@@ -688,7 +822,7 @@
         ;(doc.head || doc.documentElement).appendChild(style)
       }
       // 外层反色让白底邮件变暗；媒体元素再次反色，避免图片和视频颜色失真。
-      const layoutCss = 'html { color-scheme: light !important; } html, body { max-width: 100% !important; overflow-x: hidden !important; } img, picture, video, canvas, svg, table { max-width: 100% !important; } img, video { height: auto !important; } a, pre { overflow-wrap: anywhere !important; } pre { white-space: pre-wrap !important; }'
+      const layoutCss = 'html { color-scheme: light !important; } html, body { max-width: 100% !important; min-height: 0 !important; height: auto !important; overflow-x: hidden !important; overflow-y: visible !important; } img, picture, video, canvas, svg, table { max-width: 100% !important; } img, video { height: auto !important; } a, pre { overflow-wrap: anywhere !important; } pre { white-space: pre-wrap !important; }'
       const darkCss = 'img, picture, video, canvas { filter: invert(1) hue-rotate(180deg) !important; }'
       style.textContent = isDark ? `${layoutCss} ${darkCss}` : layoutCss
     } catch (_) { /* 邮件正文无法访问时仍保留 iframe 外层暗色处理 */ }
@@ -696,20 +830,22 @@
 
   const fetchMailDetail = item => {
     if (hasMailBody(item)) return Promise.resolve(item)
-    const key = mailCacheKey(item)
-    if (!key || !state.currentMailbox) {
+    const box = state.currentMailbox ? { ...state.currentMailbox } : null
+    const key = mailCacheKey(item, box)
+    if (!key || !box) {
       return Promise.resolve({ ...item, text: item?.preview || '', html: '' })
     }
-    if (state.mailDetailCache.has(key)) return Promise.resolve(state.mailDetailCache.get(key))
+    const cached = readMailDetailCache(key)
+    if (cached) return Promise.resolve(cached)
     if (state.mailDetailRequests.has(key)) return state.mailDetailRequests.get(key).promise
 
     const controller = new AbortController()
+    const contextId = state.mailDetailContextId
     let timedOut = false
     const timeout = setTimeout(() => {
       timedOut = true
       controller.abort()
     }, CONFIG.MAIL_DETAIL_TIMEOUT)
-    const box = { ...state.currentMailbox }
 
     const promise = (async () => {
       try {
@@ -730,12 +866,14 @@
         let data
         try { data = await response.json() } catch (_) { throw new Error('邮件正文接口返回格式错误') }
         if (!response.ok) throw new Error(data?.error || ('请求失败（' + response.status + '）'))
-        if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('邮件正文接口返回格式错误')
+        if (!data || typeof data !== 'object' || Array.isArray(data) || !hasMailBody(data)) throw new Error('邮件正文接口返回格式错误')
+        if ((data.html != null && typeof data.html !== 'string') || (data.text != null && typeof data.text !== 'string')) {
+          throw new Error('邮件正文接口返回格式错误')
+        }
+        if (contextId !== state.mailDetailContextId) throw new Error('邮件正文加载已取消')
 
-        const detail = { ...item, ...data }
-        state.mailDetailCache.set(key, detail)
-        const currentIndex = state.mailData.findIndex(entry => mailCacheKey(entry) === key)
-        if (currentIndex >= 0) state.mailData[currentIndex] = detail
+        const detail = { ...item, ...data, provider: item.provider, id: item.id }
+        storeMailDetailCache(key, detail)
         return detail
       } catch (error) {
         if (error.name === 'AbortError') {
@@ -791,7 +929,13 @@
           if (!iframe.isConnected) return
           try {
             const doc = iframe.contentDocument
-            const height = Math.max(doc?.body?.scrollHeight || 0, doc?.documentElement?.scrollHeight || 0, 320)
+            const height = Math.max(
+              doc?.body?.scrollHeight || 0,
+              doc?.body?.offsetHeight || 0,
+              doc?.documentElement?.scrollHeight || 0,
+              doc?.documentElement?.offsetHeight || 0,
+              320
+            )
             if (Math.abs((parseFloat(iframe.style.height) || 0) - height) > 1) iframe.style.height = height + 'px'
           } catch (_) {}
         })
@@ -802,6 +946,41 @@
           const doc = iframe.contentDocument
           if (!doc) return
           syncMailFrameTheme(iframe)
+          if (iframe._mailScrollDocument !== doc) {
+            iframe._mailScrollDocument = doc
+            const scrollParent = iframe.closest('.modal-body')
+            if (scrollParent) {
+              doc.addEventListener('wheel', event => {
+                if (event.ctrlKey) return
+                const unit = event.deltaMode === 1 ? 16 : (event.deltaMode === 2 ? scrollParent.clientHeight : 1)
+                const previous = scrollParent.scrollTop
+                scrollParent.scrollTop += event.deltaY * unit
+                if (scrollParent.scrollTop !== previous) event.preventDefault()
+              }, { passive: false })
+
+              let touchY = null
+              doc.addEventListener('touchstart', event => {
+                touchY = event.touches.length === 1 ? event.touches[0].clientY : null
+              }, { passive: true })
+              doc.addEventListener('touchmove', event => {
+                if (touchY === null || event.touches.length !== 1) return
+                const nextY = event.touches[0].clientY
+                const previous = scrollParent.scrollTop
+                scrollParent.scrollTop += touchY - nextY
+                touchY = nextY
+                if (scrollParent.scrollTop !== previous) event.preventDefault()
+              }, { passive: false })
+              const clearTouch = () => { touchY = null }
+              doc.addEventListener('touchend', clearTouch, { passive: true })
+              doc.addEventListener('touchcancel', clearTouch, { passive: true })
+            }
+            // iframe 获得焦点后，仍允许通过 Escape 关闭正文弹窗。
+            doc.addEventListener('keydown', event => {
+              if (event.key !== 'Escape') return
+              event.preventDefault()
+              closeModal('mail-modal')
+            })
+          }
           if (observedDocument !== doc) {
             observedDocument = doc
             iframe._mailResizeObserver?.disconnect?.()
@@ -867,8 +1046,18 @@
 
   const prefetchMailDetail = index => {
     const item = state.mailData[index]
-    if (!item || hasMailBody(item) || !mailCacheKey(item)) return
-    fetchMailDetail(item).catch(() => {})
+    const key = mailCacheKey(item)
+    if (!item || hasMailBody(item) || !key || state.mailDetailCache.has(key) || state.mailDetailRequests.has(key)) return
+    if (state.mailPrefetchActive >= CONFIG.MAIL_PREFETCH_MAX) return
+    const contextId = state.mailDetailContextId
+    state.mailPrefetchActive++
+    fetchMailDetail(item)
+      .catch(() => {})
+      .finally(() => {
+        if (contextId === state.mailDetailContextId) {
+          state.mailPrefetchActive = Math.max(0, state.mailPrefetchActive - 1)
+        }
+      })
   }
 
   const viewMailDetail = index => {
@@ -920,7 +1109,12 @@
     })
 
     document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') closeAllModals()
+      if (e.key !== 'Escape') return
+      const visibleModals = queryAll('.modal-overlay').filter(isModalOpen)
+      const modal = visibleModals[visibleModals.length - 1]
+      if (!modal) return
+      e.preventDefault()
+      closeModal(modal.id)
     })
 
 
@@ -938,7 +1132,8 @@
 
       switch (action) {
         case 'import':
-          openModal('import-modal')
+          if (state.importing) showToast('正在结束上一次导入，请稍候')
+          else openModal('import-modal')
           break
         case 'delete':
           batchDelete()
@@ -1085,7 +1280,7 @@
     // 关闭模态框
     queryAll('.modal-overlay').forEach(overlay => {
       overlay.addEventListener('click', e => {
-        if (e.target === overlay) closeAllModals()
+        if (e.target === overlay) closeModal(overlay.id)
       })
     })
 

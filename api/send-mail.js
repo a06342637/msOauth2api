@@ -1,8 +1,39 @@
 'use strict'
 
 const nodemailer = require('nodemailer')
+const addressparser = require('nodemailer/lib/addressparser')
 const { acceptRequest, getText, isEmail, requestSource, sendHandlerError, verifyPassword, PublicError } = require('../lib/api-utils')
 const { requestAccessToken } = require('../lib/mail-service')
+
+function parseRecipients(value) {
+  if (/[\r\n\0]/.test(value)) throw new PublicError('Invalid recipient address')
+
+  let parsed
+  try { parsed = addressparser(value) } catch (_) { throw new PublicError('Invalid recipient address') }
+  const recipients = []
+  let invalid = false
+  const visit = entries => {
+    for (const entry of entries || []) {
+      if (Array.isArray(entry?.group)) {
+        if (entry.group.length === 0) invalid = true
+        visit(entry.group)
+        continue
+      }
+      const address = String(entry?.address || '').trim()
+      if (!isEmail(address)) {
+        invalid = true
+        continue
+      }
+      recipients.push({ name: String(entry?.name || '').trim(), address })
+    }
+  }
+  visit(parsed)
+
+  if (invalid || recipients.length === 0) throw new PublicError('Invalid recipient address')
+  const unique = [...new Map(recipients.map(recipient => [recipient.address.toLowerCase(), recipient])).values()]
+  if (unique.length > 50) throw new PublicError('Too many recipients. Maximum: 50')
+  return unique
+}
 
 module.exports = async (req, res) => {
   if (!acceptRequest(req, res, ['GET', 'POST'])) return
@@ -21,7 +52,9 @@ module.exports = async (req, res) => {
     const html = getText(source, 'html', { max: 1024 * 1024, trim: false })
 
     if (!isEmail(email)) throw new PublicError('Invalid sender email address')
+    if (/[\r\n\0]/.test(subject)) throw new PublicError('Invalid subject')
     if (!text.trim() && !html.trim()) throw new PublicError('Missing required parameter: text or html')
+    const recipients = parseRecipients(to)
 
     const token = await requestAccessToken(refreshToken, clientId)
     transporter = nodemailer.createTransport({
@@ -43,7 +76,7 @@ module.exports = async (req, res) => {
 
     const info = await transporter.sendMail({
       from: email,
-      to,
+      to: recipients,
       subject,
       ...(text ? { text } : {}),
       ...(html ? { html } : {})

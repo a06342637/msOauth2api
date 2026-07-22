@@ -347,6 +347,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: 20px;
+  overflow-y: auto;
 }
 
 .modal {
@@ -354,10 +355,15 @@ body {
   border-radius: var(--radius);
   max-width: 480px;
   width: 100%;
+  max-height: calc(100vh - 32px);
+  max-height: min(90vh, calc(100dvh - 32px));
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .modal-header {
+  flex: 0 0 auto;
   padding: 20px;
   border-bottom: 1px solid var(--gray-100);
 }
@@ -368,12 +374,17 @@ body {
 }
 
 .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   font-size: 14px;
   color: var(--gray-600);
 }
 
 .modal-footer {
+  flex: 0 0 auto;
   padding: 16px 20px;
   border-top: 1px solid var(--gray-100);
   display: flex;
@@ -530,9 +541,17 @@ body {
 }
 
 .mail-meta p {
+  min-width: 0;
+  max-width: 100%;
   margin: 4px 0;
+  overflow-wrap: anywhere;
   font-size: 13px;
   color: var(--gray-500);
+}
+
+.mail-meta span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .mail-meta strong {
@@ -645,25 +664,6 @@ body {
 }
 
 /* ---------- Loading ---------- */
-.loading-overlay {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(255,255,255,0.8);
-  z-index: 200;
-  align-items: center;
-  justify-content: center;
-}
-
-.spinner {
-  width: 32px;
-  height: 32px;
-  border: 2px solid var(--gray-200);
-  border-top-color: var(--black);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -853,7 +853,6 @@ body::before {
 
 .footer { padding: 14px 0 20px; color: #999; }
 .toast { border-radius: 999px; box-shadow: 0 12px 35px rgba(0,0,0,.22); }
-.loading-overlay { background: rgba(250,250,248,.72); backdrop-filter: blur(5px); }
 
 @media (max-width: 760px) {
   body { overflow: auto; }
@@ -993,7 +992,6 @@ body::before {
 [data-theme="dark"] .btn-export { background: #efefe9; border-color: #efefe9; color: #171716; }
 [data-theme="dark"] .btn-danger { color: #ff8c8c; border-color: #693d3d; }
 [data-theme="dark"] .mail-meta { border-color: #353532; }
-[data-theme="dark"] .loading-overlay { background: rgba(17,17,16,.72); }
 [data-theme="dark"] .mail-content iframe { background: #fff; }
 [data-theme="dark"] .footer a:hover { color: #fff; }
 
@@ -1015,7 +1013,7 @@ body.modal-open { overflow: hidden !important; }
 .modal-close { position: absolute; top: 16px; right: 18px; width: 34px; height: 34px; padding: 0; display: inline-grid; place-items: center; border: 1px solid transparent; border-radius: 50%; background: transparent; color: #777; font: 400 25px/1 Arial, sans-serif; cursor: pointer; transition: background .18s, color .18s, transform .18s; }
 .modal-close:hover { background: #efefec; color: #111; transform: rotate(4deg); }
 .modal-close:focus-visible { outline: 2px solid #111; outline-offset: 2px; }
-.mail-modal .modal-body { overflow-y: scroll; scrollbar-width: auto; scrollbar-color: #aaa #efefec; }
+.mail-modal .modal-body { overflow-y: auto; scrollbar-width: auto; scrollbar-color: #aaa #efefec; }
 .mail-modal .modal-body::-webkit-scrollbar { width: 11px; }
 .mail-modal .modal-body::-webkit-scrollbar-track { background: #efefec; border-radius: 999px; }
 .mail-modal .modal-body::-webkit-scrollbar-thumb { background: #aaa; border: 2px solid #efefec; border-radius: 999px; }
@@ -1297,4 +1295,29 @@ button, input, textarea, select { font: inherit; }
 
 @media (prefers-reduced-motion: reduce) {
   .skeleton-line, .mail-body-spinner { animation: none; }
+}
+
+/* Final dark-theme contrast for secondary actions and pagination details. */
+[data-theme="dark"] .btn-danger {
+  background: #1a1a19;
+  color: #ff9d9d;
+  border-color: #693d3d;
+}
+[data-theme="dark"] .btn-danger:hover {
+  background: rgba(239, 68, 68, .12);
+  border-color: #a64e4e;
+  color: #ffb0b0;
+}
+[data-theme="dark"] .pagination-ellipsis { color: #aaa9a2; }
+[data-theme="dark"] .footer-version { border-color: #454541; color: #8f8f88; }
+[data-theme="dark"] .empty { color: #aaa9a2 !important; }
+/* Final dark-focus safeguard for every interactive table row. */
+[data-theme="dark"] .table tbody tr:focus-within td {
+  background: #2a2a27;
+  color: #f0f0ea;
+}
+[data-theme="dark"] .table tbody tr:focus-within .refresh-token,
+[data-theme="dark"] .table tbody tr:focus-within .mail-address,
+[data-theme="dark"] .table tbody tr:focus-within .mail-date {
+  color: #d0d0c8;
 }

@@ -9,6 +9,35 @@ function escapeHtml(value) {
   })[character])
 }
 
+function decodeHtmlEntities(value) {
+  const named = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
+  return String(value || '').replace(/&(#x[\da-f]+|#\d+|nbsp|amp|lt|gt|quot|apos);/gi, (match, entity) => {
+    const key = entity.toLowerCase()
+    if (!key.startsWith('#')) return named[key] ?? match
+    const radix = key[1] === 'x' ? 16 : 10
+    const digits = key[1] === 'x' ? key.slice(2) : key.slice(1)
+    const codePoint = Number.parseInt(digits, radix)
+    if (!Number.isInteger(codePoint) || codePoint <= 0 || codePoint > 0x10ffff) return ' '
+    try { return String.fromCodePoint(codePoint) } catch (_) { return ' ' }
+  })
+}
+
+function htmlToPlainText(value) {
+  const text = String(value || '')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<(script|style|head)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/<(br|hr)\b[^>]*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|tr|h[1-6])\s*>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+  return decodeHtmlEntities(text)
+    .replace(/\r/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+}
+
 function extractCode(message) {
   const content = `${message.subject || ''}\n${message.text || ''}\n${String(message.html || '').replace(/<[^>]*>/g, ' ')}`
   const match = content.match(/(?:^|\D)(\d{6})(?!\d)/)
@@ -36,7 +65,10 @@ module.exports = async (req, res) => {
     if (responseType === 'html') {
       res.setHeader('Content-Type', 'text/html; charset=utf-8')
       if (!messages[0]) return res.status(200).send('<p>暂无邮件</p>')
-      const safeText = escapeHtml(message.text || '').replace(/\n/g, '<br>')
+      const plainText = typeof message.text === 'string' && message.text.trim()
+        ? message.text
+        : (htmlToPlainText(message.html) || message.preview || '')
+      const safeText = escapeHtml(plainText).replace(/\n/g, '<br>')
       return res.status(200).send(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${escapeHtml(message.subject || '邮件')}</title></head><body><h2>${escapeHtml(message.subject || '（无主题）')}</h2><p><strong>发件人：</strong>${escapeHtml(message.send)}</p><p><strong>收件人：</strong>${escapeHtml(message.to)}</p><p><strong>时间：</strong>${escapeHtml(message.date)}</p>${message.code ? `<p><strong>验证码：</strong>${escapeHtml(message.code)}</p>` : ''}<hr><p>${safeText}</p></body></html>`)
     }
 

@@ -5,17 +5,34 @@ const { acceptRequest, sendHandlerError, verifyPassword, PublicError } = require
 const MAX_BODY_LENGTH = 1024 * 1024
 const AI_TIMEOUT_MS = 50000
 
-function waitForDrain(res) {
-  if (res.destroyed || res.writableEnded) return Promise.resolve(false)
+function waitForDrain(res, signal) {
+  if (res.destroyed || res.writableEnded || signal?.aborted) return Promise.resolve(false)
   return new Promise(resolve => {
+    let settled = false
     const cleanup = () => {
       res.off('drain', onDrain)
       res.off('close', onClose)
+      res.off('error', onError)
+      signal?.removeEventListener('abort', onAbort)
     }
-    const onDrain = () => { cleanup(); resolve(true) }
-    const onClose = () => { cleanup(); resolve(false) }
+    const finish = value => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(value)
+    }
+    const onDrain = () => finish(true)
+    const onClose = () => finish(false)
+    const onError = () => finish(false)
+    const onAbort = () => finish(false)
     res.once('drain', onDrain)
     res.once('close', onClose)
+    res.once('error', onError)
+    signal?.addEventListener('abort', onAbort, { once: true })
+
+    // Close the small races between the initial state check and listener setup.
+    if (res.destroyed || res.writableEnded || signal?.aborted) finish(false)
+    else if (res.writableNeedDrain === false) finish(true)
   })
 }
 
@@ -23,8 +40,13 @@ function getEndpoint(baseUrl) {
   let url
   try { url = new URL(baseUrl) } catch (_) { throw new PublicError('AI_API_URL 配置无效', 500) }
   if (!['http:', 'https:'].includes(url.protocol)) throw new PublicError('AI_API_URL 配置无效', 500)
-  const base = url.toString().replace(/\/+$/, '')
-  return /\/v1$/i.test(base) ? `${base}/chat/completions` : `${base}/v1/chat/completions`
+
+  const path = url.pathname.replace(/\/+$/, '')
+  if (/\/chat\/completions$/i.test(path)) url.pathname = path
+  else if (/\/v1$/i.test(path)) url.pathname = `${path}/chat/completions`
+  else url.pathname = `${path}/v1/chat/completions`
+  url.hash = ''
+  return url.toString()
 }
 
 module.exports = async (req, res) => {
@@ -56,17 +78,24 @@ module.exports = async (req, res) => {
     }
     let serializedMessages
     try { serializedMessages = JSON.stringify(messages) } catch (_) { throw new PublicError('messages 内容无法序列化') }
-    if (serializedMessages.length > MAX_BODY_LENGTH) throw new PublicError('messages 内容过大', 413)
+    if (Buffer.byteLength(serializedMessages, 'utf8') > MAX_BODY_LENGTH) throw new PublicError('messages 内容过大', 413)
 
-    const upstream = await fetch(getEndpoint(apiUrl), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: `{"model":${JSON.stringify(model)},"messages":${serializedMessages},"stream":true}`,
-      signal: controller.signal
-    })
+    const endpoint = getEndpoint(apiUrl)
+    let upstream
+    try {
+      upstream = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: `{"model":${JSON.stringify(model)},"messages":${serializedMessages},"stream":true}`,
+        signal: controller.signal
+      })
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error
+      throw new PublicError('无法连接 AI 服务，请稍后重试', 502)
+    }
 
     if (!upstream.ok || !upstream.body) {
       try { await upstream.body?.cancel() } catch (_) {}
@@ -83,23 +112,31 @@ module.exports = async (req, res) => {
 
     const reader = upstream.body.getReader()
     while (true) {
+      if (clientClosed || res.destroyed || res.writableEnded) return
       const { done, value } = await reader.read()
       if (done) break
-      if (clientClosed) return
-      if (!res.write(Buffer.from(value)) && !await waitForDrain(res)) return
+      if (clientClosed || res.destroyed || res.writableEnded) return
+      if (!res.write(Buffer.from(value)) && !await waitForDrain(res, controller.signal)) return
     }
+    if (clientClosed || res.destroyed || res.writableEnded) return
     return res.end()
   } catch (error) {
-    if (clientClosed) return
+    if (clientClosed || res.destroyed || res.writableEnded) return
     if (error?.name === 'AbortError') error = new PublicError('AI 服务请求超时', 504)
     if (res.headersSent) {
       console.error('AI stream error', error)
-      res.write(`event: error\ndata: ${JSON.stringify({ error: error instanceof PublicError ? error.message : 'AI 服务请求失败' })}\n\n`)
-      return res.end()
+      try {
+        if (!res.destroyed && !res.writableEnded) {
+          res.write(`event: error\ndata: ${JSON.stringify({ error: error instanceof PublicError ? error.message : 'AI 服务请求失败' })}\n\n`)
+        }
+      } catch (_) {}
+      try { if (!res.destroyed && !res.writableEnded) res.end() } catch (_) {}
+      return
     }
     return sendHandlerError(res, error, 'AI 服务请求失败')
   } finally {
     clearTimeout(timer)
+    controller.abort()
     res.off('close', onClientClose)
   }
 }
