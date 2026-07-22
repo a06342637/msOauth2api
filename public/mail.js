@@ -8,6 +8,8 @@
 
   const CONFIG = {
     STORAGE_KEY: 'emailData',
+    MAIL_READ_STORAGE_KEY: 'mailLocalReadState',
+    MAIL_READ_STORAGE_MAX: 3000,
     MAIL_ITEMS_PER_PAGE: 10,
     DEFAULT_ITEMS_PER_PAGE: 10,
     API_BASE: '/api/mail-all',
@@ -39,6 +41,7 @@
     mailRequestId: 0,
     mailListLoading: false,
     mailListWarning: '',
+    localReadMailKeys: new Set(),
     mailDetailCache: new Map(),
     mailDetailRequests: new Map(),
     mailDetailViewId: 0,
@@ -193,6 +196,27 @@
     } catch (_) {
       throw new Error('保存失败：浏览器本地存储空间不足或不可用')
     }
+  }
+
+  const getLocalReadMailKeys = () => {
+    try {
+      const data = JSON.parse(localStorage.getItem(CONFIG.MAIL_READ_STORAGE_KEY) || '[]')
+      if (!Array.isArray(data)) return new Set()
+      const validKeys = data.filter(key => typeof key === 'string' && key.length > 0 && key.length <= 4096)
+      return new Set(validKeys.slice(-CONFIG.MAIL_READ_STORAGE_MAX))
+    } catch (_) {
+      try { localStorage.removeItem(CONFIG.MAIL_READ_STORAGE_KEY) } catch (_) {}
+      return new Set()
+    }
+  }
+
+  const persistLocalReadMailKeys = () => {
+    while (state.localReadMailKeys.size > CONFIG.MAIL_READ_STORAGE_MAX) {
+      state.localReadMailKeys.delete(state.localReadMailKeys.values().next().value)
+    }
+    try {
+      localStorage.setItem(CONFIG.MAIL_READ_STORAGE_KEY, JSON.stringify([...state.localReadMailKeys]))
+    } catch (_) { /* 当前页面仍保留已读状态，存储恢复后再持久化 */ }
   }
 
   /* ---------- 工具函数 ---------- */
@@ -1240,7 +1264,7 @@
     }
 
     tbody.innerHTML = pageData.map((item, index) => `
-      <tr tabindex="0" data-mail-index="${start + index}" aria-label="打开邮件：${escapeHtml(item.subject || '无主题')}${item.mailbox === 'Junk' ? '（垃圾箱）' : ''}">
+      <tr class="${isMailLocallyRead(item) ? 'mail-row-read' : ''}" tabindex="0" data-mail-index="${start + index}" aria-label="打开邮件：${escapeHtml(item.subject || '无主题')}${item.mailbox === 'Junk' ? '（垃圾箱）' : ''}">
         <td class="mail-address" title="${escapeHtml(item.send || '')}">${escapeHtml(item.send || '未知发件人')}</td>
         <td class="mail-address" title="${escapeHtml(item.to || state.currentMailbox?.email || '')}">${escapeHtml(item.to || state.currentMailbox?.email || '未知收件人')}</td>
         <td class="mail-subject">${item.mailbox === 'Junk' ? '<span class="mail-folder-badge" title="来自垃圾箱">垃圾箱</span>' : ''}<span class="mail-subject-text">${escapeHtml(item.subject || '(无主题)')}</span></td>
@@ -1287,6 +1311,19 @@
       provider,
       id
     ])
+  }
+
+  const isMailLocallyRead = item => {
+    const key = mailCacheKey(item)
+    return Boolean(key && state.localReadMailKeys.has(key))
+  }
+
+  const markMailLocallyRead = item => {
+    const key = mailCacheKey(item)
+    if (!key || state.localReadMailKeys.has(key)) return false
+    state.localReadMailKeys.add(key)
+    persistLocalReadMailKeys()
+    return true
   }
 
   const hasMailBody = item => item && (
@@ -1570,6 +1607,10 @@
     const item = state.mailData[index]
     if (!item) return
 
+    if (markMailLocallyRead(item)) {
+      $(`#mail-table tbody tr[data-mail-index="${index}"]`)?.classList.add('mail-row-read')
+    }
+
     $('#mail-modal-title').textContent = item.subject || '（无主题）'
     $('#mail-modal-sender').textContent = item.send || '未知发件人'
     $('#mail-modal-recipient').textContent = item.to || state.currentMailbox?.email || '未知收件人'
@@ -1809,6 +1850,7 @@
   /* ---------- 初始化 ---------- */
   const init = () => {
     state.emailData = getEmailData()
+    state.localReadMailKeys = getLocalReadMailKeys()
     render()
     initUpload()
     bindEvents()
@@ -1820,7 +1862,7 @@
     }
 
     console.log('%c感谢您使用本项目！', 'color: #666; font-size: 11px;')
-    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.5.7', 'color: #007BFF; font-size: 12px;')
+    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.5.8', 'color: #007BFF; font-size: 12px;')
   }
 
   document.addEventListener('DOMContentLoaded', init)
