@@ -168,7 +168,12 @@
   }
 
   /* ---------- localStorage ---------- */
-  const normalizeStoredAccount = item => {
+  const normalizeAddedAt = value => {
+    const timestamp = Date.parse(String(value || ''))
+    return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : ''
+  }
+
+  const normalizeStoredAccount = (item, fallbackAddedAt = '') => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return null
     const rawDelimiter = String(item.delimiter || '----')
     const delimiter = rawDelimiter.length <= 32 && !/[\r\n]/.test(rawDelimiter) ? rawDelimiter : '----'
@@ -177,14 +182,30 @@
       password: String(item.password || ''),
       clientId: String(item.clientId || '').trim(),
       refreshToken: String(item.refreshToken || '').trim(),
-      delimiter
+      delimiter,
+      addedAt: normalizeAddedAt(item.addedAt) || fallbackAddedAt
     }
   }
 
   const getEmailData = () => {
     try {
       const data = JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEY) || '[]')
-      return Array.isArray(data) ? data.map(normalizeStoredAccount).filter(Boolean) : []
+      if (!Array.isArray(data)) return []
+
+      const migrationTime = new Date().toISOString()
+      let needsMigration = false
+      const normalizedData = data.map(item => {
+        const storedAddedAt = normalizeAddedAt(item?.addedAt)
+        const account = normalizeStoredAccount(item, migrationTime)
+        if (account && storedAddedAt !== account.addedAt) needsMigration = true
+        return account
+      }).filter(Boolean)
+
+      if (normalizedData.length !== data.length) needsMigration = true
+      if (needsMigration) {
+        try { localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(normalizedData)) } catch (_) {}
+      }
+      return normalizedData
     } catch (_) {
       try { localStorage.removeItem(CONFIG.STORAGE_KEY) } catch (_) {}
       return []
@@ -395,8 +416,15 @@
       return `${value.slice(0, 6)}...${value.slice(-10)}`
     }
 
+    const formatAddedAt = (value) => {
+      const date = new Date(value)
+      if (Number.isNaN(date.getTime())) return '—'
+      const pad = number => String(number).padStart(2, '0')
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    }
+
     if (pageData.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" class="empty">暂无数据</td></tr>`
+      tbody.innerHTML = `<tr><td colspan="6" class="empty">暂无数据</td></tr>`
       updateSelectAllState()
       return
     }
@@ -412,6 +440,7 @@
           </td>
           <td class="text-ellipsis" title="${escapeHtml(item.clientId)}">${escapeHtml(item.clientId)}</td>
           <td class="refresh-token" title="Refresh Token 已隐藏，点击“编辑”查看完整内容">${escapeHtml(formatRefreshToken(item.refreshToken))}</td>
+          <td class="added-time-cell"><time class="added-time" datetime="${escapeHtml(item.addedAt)}" title="添加时间：${escapeHtml(formatAddedAt(item.addedAt))}">${escapeHtml(formatAddedAt(item.addedAt))}</time></td>
           <td>
             <div class="actions">
               <button type="button" class="btn btn-sm" data-action="edit">编辑</button>
@@ -939,6 +968,7 @@
       const verifiedAccounts = results.filter(result => result.ok)
       const data = getEmailData()
       const latestEmails = new Set(data.map(item => String(item.email || '').trim().toLowerCase()).filter(Boolean))
+      const importedAt = new Date().toISOString()
       let duplicateCount = parsed.duplicates
       let importedCount = 0
 
@@ -950,7 +980,7 @@
         }
         latestEmails.add(emailKey)
         const { lineNumber, sourceLine, ...account } = result.candidate
-        data.push({ ...account, refreshToken: result.refreshToken })
+        data.push({ ...account, refreshToken: result.refreshToken, addedAt: importedAt })
         importedCount++
       })
 

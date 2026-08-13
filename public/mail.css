@@ -808,7 +808,8 @@ body::before {
 .table th:last-child { border-radius: 0 15px 0 0; }
 .table th:nth-child(2) { width: 24%; }
 .table th:nth-child(3) { width: 22%; }
-.table th:nth-child(4) { width: 27%; }
+.table th:nth-child(4) { width: auto; }
+.table th:nth-child(5) { width: 170px; }
 .table th:last-child { width: 245px; }
 .table input[type=checkbox] { width: 16px; height: 16px; accent-color: #111; }
 .text-ellipsis { font-weight: 580; }
@@ -817,6 +818,7 @@ body::before {
 .email-copy-button:hover { color: #111; text-decoration: none; }
 .email-copy-button:focus-visible { outline: 2px solid #2b70f6; outline-offset: 3px; border-radius: 3px; }
 .refresh-token { color: #8a8a8a; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.added-time { color: #696965; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .actions { justify-content: flex-end; }
 .empty { height: 220px !important; color: #9b9b96 !important; }
 .pagination-wrap { padding: 16px 24px 20px; border: 0; }
@@ -876,6 +878,7 @@ body::before {
   #email-table .check-col { position: absolute; top: 12px; right: 10px; width: auto; }
   .actions { margin-top: 8px; justify-content: flex-start; }
   .refresh-token { max-width: 90%; }
+  .added-time-cell::before { content: "添加时间："; color: #8a8a84; font-size: 12px; }
   .mail-header { align-items: flex-start; padding: 20px 18px; }
   .mail-meta { flex-direction: column; gap: 5px; }
   .pagination-wrap { padding: 12px 14px 18px; }
@@ -919,7 +922,8 @@ body::before {
 }
 #email-table th:nth-child(2), #email-table td:nth-child(2) { width: 24%; }
 #email-table th:nth-child(3), #email-table td:nth-child(3) { width: 22%; }
-#email-table th:nth-child(4), #email-table td:nth-child(4) { width: 27%; }
+#email-table th:nth-child(4), #email-table td:nth-child(4) { width: auto; }
+#email-table th:nth-child(5), #email-table td:nth-child(5) { width: 170px; }
 #email-table th:last-child, #email-table td:last-child { width: 245px; }
 #mail-table th, #mail-table td { vertical-align: middle; }
 #mail-table th:last-child, #mail-table td:last-child { text-align: center; }
@@ -941,7 +945,7 @@ body::before {
 .account-edit-form .form-group { margin: 0; }
 .account-edit-form .form-group:last-child { grid-column: 1 / -1; }
 .account-edit-form textarea { min-height: 132px; resize: vertical; }
-#email-table th:last-child, #email-table td:last-child { width: 310px; }
+#email-table th:last-child, #email-table td:last-child { width: 220px; }
 @media (max-width: 760px) {
   .account-edit-form { grid-template-columns: 1fr; }
   .account-edit-form .form-group:last-child { grid-column: auto; }
@@ -1063,6 +1067,7 @@ body.modal-open { overflow: hidden !important; }
 [data-theme="dark"] .text-ellipsis { color: #f0f0ea; }
 [data-theme="dark"] .refresh-token,
 [data-theme="dark"] #email-table td.refresh-token,
+[data-theme="dark"] .added-time,
 [data-theme="dark"] .mail-address,
 [data-theme="dark"] .mail-date { color: #b9b9b1; }
 [data-theme="dark"] .pagination-info,
