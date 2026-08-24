@@ -1,6 +1,6 @@
 # MS OAuth2API
 
-Microsoft OAuth2 邮件 API 与本地邮箱工作台。当前版本：**0.5.9**。
+Microsoft OAuth2 邮件 API 与本地邮箱工作台。当前版本：**0.6.0**。
 
 账号数据仅保存在浏览器的 localStorage 中，不会写入仓库或服务端数据库。
 
@@ -28,6 +28,7 @@ Microsoft OAuth2 邮件 API 与本地邮箱工作台。当前版本：**0.5.9**�
 - 点击收件箱会合并加载收件箱和垃圾箱，垃圾箱邮件会显示“垃圾箱”标记。
 - 支持刷新当前邮箱以及查看邮件详情。
 - 邮件列表先加载轻量摘要，正文按需加载并在当前邮箱中缓存，减少等待和重复请求。
+- 同时兼容 Microsoft Graph 与 Outlook IMAP OAuth；Token 没有 Graph 权限时会自动回退到 IMAP。
 - 支持明亮/暗色主题。
 
 ## 环境变量
