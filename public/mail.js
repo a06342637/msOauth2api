@@ -409,11 +409,11 @@
     const end = start + state.itemsPerPage
     const pageData = filtered.slice(start, end)
 
-    const formatRefreshToken = (token) => {
-      const value = String(token || '')
+    const formatCredential = (credential, leading = 8, trailing = 8) => {
+      const value = String(credential || '')
       if (!value) return '—'
-      if (value.length <= 16) return '••••••••••••'
-      return `${value.slice(0, 6)}...${value.slice(-10)}`
+      if (value.length <= leading + trailing + 3) return value
+      return `${value.slice(0, leading)}...${value.slice(-trailing)}`
     }
 
     const formatAddedAt = (value) => {
@@ -424,7 +424,7 @@
     }
 
     if (pageData.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" class="empty">暂无数据</td></tr>`
+      tbody.innerHTML = `<tr><td colspan="7" class="empty">暂无数据</td></tr>`
       updateSelectAllState()
       return
     }
@@ -436,10 +436,17 @@
             <input type="checkbox" data-index="${item.index}" aria-label="选择 ${escapeHtml(item.email)}" ${state.selectedItems.includes(String(item.index)) ? 'checked' : ''}>
           </td>
           <td class="text-ellipsis account-email-cell">
-            <button type="button" class="email-copy-button" data-action="copy-email" title="点击复制邮箱：${escapeHtml(item.email)}" aria-label="复制邮箱 ${escapeHtml(item.email)}">${escapeHtml(item.email)}</button>
+            <button type="button" class="account-copy-button" data-action="copy-field" data-field="email" title="点击复制完整邮箱" aria-label="复制邮箱 ${escapeHtml(item.email)}">${escapeHtml(item.email || '—')}</button>
           </td>
-          <td class="text-ellipsis" title="${escapeHtml(item.clientId)}">${escapeHtml(item.clientId)}</td>
-          <td class="refresh-token" title="Refresh Token 已隐藏，点击“编辑”查看完整内容">${escapeHtml(formatRefreshToken(item.refreshToken))}</td>
+          <td class="credential-cell password-cell">
+            <button type="button" class="account-copy-button" data-action="copy-field" data-field="password" title="点击复制完整密码" aria-label="复制 ${escapeHtml(item.email)} 的密码">${escapeHtml(item.password || '—')}</button>
+          </td>
+          <td class="credential-cell client-id-cell">
+            <button type="button" class="account-copy-button credential-copy-button" data-action="copy-field" data-field="clientId" title="点击复制完整 Client ID" aria-label="复制 ${escapeHtml(item.email)} 的完整 Client ID">${escapeHtml(formatCredential(item.clientId, 8, 8))}</button>
+          </td>
+          <td class="credential-cell refresh-token-cell">
+            <button type="button" class="account-copy-button credential-copy-button" data-action="copy-field" data-field="refreshToken" title="点击复制完整 Refresh Token" aria-label="复制 ${escapeHtml(item.email)} 的完整 Refresh Token">${escapeHtml(formatCredential(item.refreshToken, 6, 10))}</button>
+          </td>
           <td class="added-time-cell"><time class="added-time" datetime="${escapeHtml(item.addedAt)}" title="添加时间：${escapeHtml(formatAddedAt(item.addedAt))}">${escapeHtml(formatAddedAt(item.addedAt))}</time></td>
           <td>
             <div class="actions">
@@ -710,12 +717,24 @@
     }
   }
 
-  const copyEmailAddress = async index => {
-    const email = String(getEmailData()[index]?.email || '').trim()
-    if (!email) return
+  const COPY_FIELD_LABELS = Object.freeze({
+    email: '邮箱',
+    password: '密码',
+    clientId: 'Client ID',
+    refreshToken: 'Refresh Token'
+  })
+
+  const copyAccountField = async (index, field) => {
+    const label = COPY_FIELD_LABELS[field]
+    if (!label) return
+    const value = String(getEmailData()[index]?.[field] || '')
+    if (!value) {
+      showToast(label + '为空，无法复制')
+      return
+    }
     try {
-      await copyToClipboard(email)
-      showToast('已复制邮箱：' + email)
+      await copyToClipboard(value)
+      showToast('已复制' + label)
     } catch (error) {
       showToast(error.message || '复制失败，请检查浏览器权限')
     }
@@ -1735,8 +1754,8 @@
       const index = parseInt(tr.dataset.index, 10)
 
       switch (action) {
-        case 'copy-email':
-          copyEmailAddress(index)
+        case 'copy-field':
+          copyAccountField(index, btn.dataset.field)
           break
         case 'edit':
           openAccountEditor(index)
@@ -1892,7 +1911,7 @@
     }
 
     console.log('%c感谢您使用本项目！', 'color: #666; font-size: 11px;')
-    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.6.0', 'color: #007BFF; font-size: 12px;')
+    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.6.1', 'color: #007BFF; font-size: 12px;')
   }
 
   document.addEventListener('DOMContentLoaded', init)
