@@ -815,8 +815,7 @@ body::before {
 .table input[type=checkbox] { width: 16px; height: 16px; accent-color: #111; }
 .text-ellipsis { font-weight: 580; }
 .account-email-cell, .credential-cell { min-width: 0; }
-.account-copy-button { display: block; width: 100%; max-width: 100%; padding: 2px 0; overflow: hidden; border: 0; background: transparent; color: inherit; font: inherit; font-weight: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: copy; }
-.account-copy-button:hover { color: #111; text-decoration: underline dotted; text-underline-offset: 4px; }
+.account-copy-button { display: block; width: 100%; max-width: 100%; padding: 2px 0; overflow: hidden; border: 0; background: transparent; color: inherit; font: inherit; font-weight: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: default; }
 .account-copy-button:active { opacity: .65; }
 .account-copy-button:focus-visible { outline: 2px solid #2b70f6; outline-offset: 3px; border-radius: 3px; }
 .credential-copy-button { color: #696965; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-variant-numeric: tabular-nums; }
@@ -1009,7 +1008,6 @@ body::before {
 [data-theme="dark"] .table tr:hover td, [data-theme="dark"] #mail-table tbody tr:not(:has(.empty)):hover td { background: #242422; }
 [data-theme="dark"] .btn-copy-account,
 [data-theme="dark"] .btn-export { background: #efefe9; border-color: #efefe9; color: #171716; }
-[data-theme="dark"] .account-copy-button:hover { color: #fff; }
 [data-theme="dark"] .btn-danger { color: #ff8c8c; border-color: #693d3d; }
 [data-theme="dark"] .mail-meta { border-color: #353532; }
 [data-theme="dark"] .mail-content iframe { background: #fff; }
