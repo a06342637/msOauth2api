@@ -21,6 +21,7 @@
     MAX_IMPORT_SIZE: 5 * 1024 * 1024,
     MAX_IMPORT_LINES: 10000,
     MAX_IMPORT_FILES: 1000,
+    MAX_REMARK_LENGTH: 2000,
     IMPORT_FILE_CONCURRENCY: 6,
     ACCOUNT_VALIDATION_API: '/api/refresh-token',
     ACCOUNT_VALIDATION_TIMEOUT: 25000,
@@ -62,9 +63,13 @@
 
   const resetAccountEditorForm = () => {
     state.editingAccountIndex = null
-    ;['#edit-email', '#edit-password', '#edit-client-id', '#edit-refresh-token'].forEach(selector => {
+    ;['#edit-email', '#edit-password', '#edit-client-id', '#edit-refresh-token', '#edit-remark'].forEach(selector => {
       const field = $(selector)
-      if (field) field.value = ''
+      if (!field) return
+      field.value = ''
+      // 清掉用户上次拖动留下的行内尺寸，避免窗口变窄后撑破弹窗布局。
+      field.style.width = ''
+      field.style.height = ''
     })
   }
 
@@ -173,15 +178,22 @@
     return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : ''
   }
 
+  const normalizeRemark = value => String(value ?? '').trim()
+
+  // Client ID / Refresh Token 都不含空白字符，粘贴带入的换行、空格一律剔除。
+  const stripWhitespace = value => String(value ?? '').replace(/\s+/g, '')
+
   const normalizeStoredAccount = (item, fallbackAddedAt = '') => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return null
     const rawDelimiter = String(item.delimiter || '----')
     const delimiter = rawDelimiter.length <= 32 && !/[\r\n]/.test(rawDelimiter) ? rawDelimiter : '----'
+    const storedRemark = item.remark ?? item.note ?? ''
     return {
       email: String(item.email || '').trim(),
       password: String(item.password || ''),
       clientId: String(item.clientId || '').trim(),
       refreshToken: String(item.refreshToken || '').trim(),
+      remark: normalizeRemark(storedRemark),
       delimiter,
       addedAt: normalizeAddedAt(item.addedAt) || fallbackAddedAt
     }
@@ -196,8 +208,15 @@
       let needsMigration = false
       const normalizedData = data.map(item => {
         const storedAddedAt = normalizeAddedAt(item?.addedAt)
+        const hasStoredRemark = Boolean(item && typeof item === 'object' && !Array.isArray(item) && Object.prototype.hasOwnProperty.call(item, 'remark'))
+        const storedRemark = hasStoredRemark ? normalizeRemark(item.remark) : ''
         const account = normalizeStoredAccount(item, migrationTime)
-        if (account && storedAddedAt !== account.addedAt) needsMigration = true
+        if (account && (
+          storedAddedAt !== account.addedAt ||
+          storedRemark !== account.remark ||
+          !hasStoredRemark ||
+          Object.prototype.hasOwnProperty.call(item, 'note')
+        )) needsMigration = true
         return account
       }).filter(Boolean)
 
@@ -410,7 +429,8 @@
     const pageData = filtered.slice(start, end)
 
     const formatCredential = (credential, leading = 8, trailing = 8) => {
-      const value = String(credential || '')
+      // 备注可能是多行文本，表格单元格里统一折成一行再做省略。
+      const value = String(credential || '').replace(/\s*[\r\n]+\s*/g, ' ').trim()
       if (!value) return '—'
       if (value.length <= leading + trailing + 3) return value
       return `${value.slice(0, leading)}...${value.slice(-trailing)}`
@@ -424,7 +444,7 @@
     }
 
     if (pageData.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" class="empty">暂无数据</td></tr>`
+      tbody.innerHTML = `<tr><td colspan="8" class="empty">暂无数据</td></tr>`
       updateSelectAllState()
       return
     }
@@ -442,10 +462,13 @@
             <button type="button" class="account-copy-button" data-action="copy-field" data-field="password" title="点击复制完整密码" aria-label="复制 ${escapeHtml(item.email)} 的密码">${escapeHtml(item.password || '—')}</button>
           </td>
           <td class="credential-cell client-id-cell">
-            <button type="button" class="account-copy-button credential-copy-button" data-action="copy-field" data-field="clientId" title="点击复制完整 Client ID" aria-label="复制 ${escapeHtml(item.email)} 的完整 Client ID">${escapeHtml(formatCredential(item.clientId, 8, 8))}</button>
+            <button type="button" class="account-copy-button credential-copy-button" data-action="copy-field" data-field="clientId" title="点击复制完整 Client ID" aria-label="复制 ${escapeHtml(item.email)} 的完整 Client ID">${escapeHtml(formatCredential(item.clientId, 6, 6))}</button>
           </td>
           <td class="credential-cell refresh-token-cell">
-            <button type="button" class="account-copy-button credential-copy-button" data-action="copy-field" data-field="refreshToken" title="点击复制完整 Refresh Token" aria-label="复制 ${escapeHtml(item.email)} 的完整 Refresh Token">${escapeHtml(formatCredential(item.refreshToken, 6, 10))}</button>
+            <button type="button" class="account-copy-button credential-copy-button" data-action="copy-field" data-field="refreshToken" title="点击复制完整 Refresh Token" aria-label="复制 ${escapeHtml(item.email)} 的完整 Refresh Token">${escapeHtml(formatCredential(item.refreshToken, 6, 6))}</button>
+          </td>
+          <td class="credential-cell remark-cell">
+            <button type="button" class="account-copy-button credential-copy-button" data-action="copy-field" data-field="remark" title="${item.remark ? '点击复制完整备注' : '暂无备注，可在编辑中添加'}" aria-label="${item.remark ? `复制 ${escapeHtml(item.email)} 的完整备注` : `${escapeHtml(item.email)} 暂无备注`}">${escapeHtml(formatCredential(item.remark, 5, 5))}</button>
           </td>
           <td class="added-time-cell"><time class="added-time" datetime="${escapeHtml(item.addedAt)}" title="添加时间：${escapeHtml(formatAddedAt(item.addedAt))}">${escapeHtml(formatAddedAt(item.addedAt))}</time></td>
           <td>
@@ -548,6 +571,7 @@
     $('#edit-password').value = account.password || ''
     $('#edit-client-id').value = account.clientId || ''
     $('#edit-refresh-token').value = account.refreshToken || ''
+    $('#edit-remark').value = account.remark || ''
     openModal('edit-account-modal')
   }
 
@@ -558,8 +582,13 @@
 
     const email = $('#edit-email').value.trim()
     const password = $('#edit-password').value.trim()
-    const clientId = $('#edit-client-id').value.trim()
-    const refreshToken = $('#edit-refresh-token').value.trim()
+    // Client ID 与 Refresh Token 现在是多行文本框，粘贴时容易带入换行和空格，这里统一剔除。
+    const clientId = stripWhitespace($('#edit-client-id').value)
+    const refreshToken = stripWhitespace($('#edit-refresh-token').value)
+    const remark = normalizeRemark($('#edit-remark').value)
+
+    if (clientId !== $('#edit-client-id').value.trim()) $('#edit-client-id').value = clientId
+    if (refreshToken !== $('#edit-refresh-token').value.trim()) $('#edit-refresh-token').value = refreshToken
 
     if (!email || !password || !clientId || !refreshToken) {
       showToast('请完整填写邮箱、密码、Client ID 和 Refresh Token')
@@ -577,8 +606,45 @@
       showToast('该邮箱已存在，不能重复保存')
       return
     }
+    if (remark.length > CONFIG.MAX_REMARK_LENGTH) {
+      showToast(`备注不能超过 ${CONFIG.MAX_REMARK_LENGTH} 个字符`)
+      return
+    }
     if (email.length > 320 || password.length > 1000 || clientId.length > 200 || refreshToken.length > 20000) {
       showToast('账号字段过长，请缩短后重试')
+      return
+    }
+
+    const finishSave = (data, verifiedRefreshToken) => {
+      if (!data[index]) throw new Error('账号已不存在，请关闭窗口后重试')
+      const duplicateNow = data.some((item, itemIndex) => itemIndex !== index && String(item.email || '').toLowerCase() === email.toLowerCase())
+      if (duplicateNow) throw new Error('该邮箱已存在，不能重复保存')
+
+      data[index] = {
+        ...data[index],
+        email,
+        password,
+        clientId,
+        refreshToken: verifiedRefreshToken,
+        remark
+      }
+      setEmailData(data)
+      state.emailData = data
+      state.accountSaveController = null
+      state.accountSaving = false
+      state.editingAccountIndex = null
+      closeModal('edit-account-modal')
+      render()
+    }
+
+    // 只修改备注或其他非凭证字段时无需重复请求 Microsoft，避免验证服务异常阻塞备注保存。
+    if (initialData[index].clientId === clientId && initialData[index].refreshToken === refreshToken) {
+      try {
+        finishSave(getEmailData(), refreshToken)
+        showToast('账号信息已更新')
+      } catch (error) {
+        showToast(error.message || '账号保存失败')
+      }
       return
     }
 
@@ -598,19 +664,7 @@
       const verified = await validateAccountCredentials({ clientId, refreshToken, signal: controller.signal })
       if (controller.signal.aborted || state.editingAccountIndex !== index || !isModalOpen($('#edit-account-modal'))) return
 
-      const data = getEmailData()
-      if (!data[index]) throw new Error('账号已不存在，请关闭窗口后重试')
-      const duplicateNow = data.some((item, itemIndex) => itemIndex !== index && String(item.email || '').toLowerCase() === email.toLowerCase())
-      if (duplicateNow) throw new Error('该邮箱已存在，不能重复保存')
-
-      data[index] = { ...data[index], email, password, clientId, refreshToken: verified.refreshToken }
-      setEmailData(data)
-      state.emailData = data
-      state.accountSaveController = null
-      state.accountSaving = false
-      state.editingAccountIndex = null
-      closeModal('edit-account-modal')
-      render()
+      finishSave(getEmailData(), verified.refreshToken)
       showToast('凭证验证通过，账号信息已更新')
     } catch (error) {
       if (error?.validationType === 'cancelled' || controller.signal.aborted) return
@@ -721,7 +775,8 @@
     email: '邮箱',
     password: '密码',
     clientId: 'Client ID',
-    refreshToken: 'Refresh Token'
+    refreshToken: 'Refresh Token',
+    remark: '备注'
   })
 
   const copyAccountField = async (index, field) => {
@@ -740,6 +795,16 @@
     }
   }
 
+  const serializeAccount = item => {
+    if (!item) return ''
+    const delimiter = item.delimiter || '----'
+    // 每个账号保持一行；多行备注折成空格。备注为空时不追加多余分隔符。
+    const remark = normalizeRemark(item.remark).replace(/\s*[\r\n]+\s*/g, ' ')
+    const fields = [item.email, item.password, item.clientId, item.refreshToken].map(field => String(field ?? ''))
+    if (remark) fields.push(remark)
+    return fields.join(delimiter)
+  }
+
   const exportSelectedAccounts = async () => {
     const data = getEmailData()
     const rows = state.selectedItems
@@ -747,7 +812,7 @@
       .sort((a, b) => a - b)
       .map(index => data[index])
       .filter(Boolean)
-      .map(item => [item.email, item.password, item.clientId, item.refreshToken].join(item.delimiter || '----'))
+      .map(serializeAccount)
 
     if (!rows.length) return
     try {
@@ -826,18 +891,19 @@
       const rowLabel = `第 ${index + 1} 行`
       const fields = value.split(delimiter).map(field => field.trim())
       if (fields.length < 4) {
-        invalidRows.push(rowLabel + '：字段不足，应为邮箱、密码/Key、Client ID、Refresh Token')
+        invalidRows.push(rowLabel + '：字段不足，应为邮箱、密码/Key、Client ID、Refresh Token（可选备注）')
         invalidAccounts.push({ lineNumber: index + 1, sourceLine: value })
         return
       }
 
-      const [email, password, clientId, ...tokenParts] = fields
-      const refreshToken = tokenParts.join(delimiter).trim()
+      const [email, password, clientId, refreshToken = '', ...remarkParts] = fields
+      const remark = normalizeRemark(remarkParts.join(delimiter))
       let reason = ''
       if (!email || email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) reason = '邮箱格式不正确'
       else if (!password || password.length > 1000) reason = '密码/Key 为空或过长'
       else if (!clientId || clientId.length > 200) reason = 'Client ID 为空或过长'
       else if (!refreshToken || refreshToken.length > 20000) reason = 'Refresh Token 为空或过长'
+      else if (remark.length > CONFIG.MAX_REMARK_LENGTH) reason = `备注不能超过 ${CONFIG.MAX_REMARK_LENGTH} 个字符`
       if (reason) {
         invalidRows.push(rowLabel + '：' + reason)
         invalidAccounts.push({ lineNumber: index + 1, sourceLine: value })
@@ -850,7 +916,7 @@
         return
       }
       existingEmails.add(emailKey)
-      candidates.push({ email, password, clientId, refreshToken, delimiter, lineNumber: index + 1, sourceLine: value })
+      candidates.push({ email, password, clientId, refreshToken, remark, delimiter, lineNumber: index + 1, sourceLine: value })
     })
 
     return { candidates, invalidRows, invalidAccounts, duplicates }
@@ -1911,7 +1977,7 @@
     }
 
     console.log('%c感谢您使用本项目！', 'color: #666; font-size: 11px;')
-    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.6.1', 'color: #007BFF; font-size: 12px;')
+    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.6.3', 'color: #007BFF; font-size: 12px;')
   }
 
   document.addEventListener('DOMContentLoaded', init)

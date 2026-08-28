@@ -798,7 +798,7 @@ body::before {
 .btn-danger { background: #fff; color: var(--danger); border-color: #fecaca; }
 .btn-sm { min-height: 30px; padding: 5px 10px; border-radius: 9px; font-size: 12px; }
 
-.table-wrap { margin: 0 24px; border: 1px solid var(--line); border-radius: 16px; background: #fff; }
+.table-wrap { margin: 0 24px; border: 1px solid var(--line); border-radius: 16px; background: #fff; overflow: auto; }
 .table { table-layout: fixed; }
 .table th { height: 46px; padding: 10px 16px; background: #f5f5f3; color: #777; font-size: 10px; font-weight: 750; letter-spacing: .09em; }
 .table td { height: 58px; padding: 10px 16px; border-color: #eeeeeb; }
@@ -806,12 +806,7 @@ body::before {
 .table tr:hover td { background: #fbfbf9; }
 .table th:first-child { border-radius: 15px 0 0 0; }
 .table th:last-child { border-radius: 0 15px 0 0; }
-.table th:nth-child(2) { width: 22%; }
-.table th:nth-child(3) { width: 130px; }
-.table th:nth-child(4) { width: 155px; }
-.table th:nth-child(5) { width: auto; }
-.table th:nth-child(6) { width: 170px; }
-.table th:last-child { width: 245px; }
+/* 账号表列宽统一在下方 #email-table 区块定义，避免同一列出现两套宽度。 */
 .table input[type=checkbox] { width: 16px; height: 16px; accent-color: #111; }
 .text-ellipsis { font-weight: 580; }
 .account-email-cell, .credential-cell { min-width: 0; }
@@ -872,7 +867,18 @@ body::before {
   .toolbar-actions { width: 100%; margin: 0; display: grid; grid-template-columns: 1fr 1fr; }
   .toolbar-actions .btn:first-child { grid-column: span 2; }
   .table-wrap { margin: 0 14px; border: 0; background: transparent; overflow: visible; }
-  #email-table thead, #mail-table thead { display: none; }
+  /* 卡片布局下表头不再参与排版，但保留在无障碍树中供屏幕阅读器朗读。 */
+  #email-table thead, #mail-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
   #email-table, #email-table tbody, #email-table tr, #email-table td, #mail-table, #mail-table tbody, #mail-table tr, #mail-table td { display: block; width: 100%; }
   #email-table tr, #mail-table tr { position: relative; margin-bottom: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
   #email-table td, #mail-table td { height: auto; padding: 5px 0; border: 0; }
@@ -883,6 +889,7 @@ body::before {
   .password-cell::before { content: "密码："; }
   .client-id-cell::before { content: "Client ID："; }
   .refresh-token-cell::before { content: "Refresh Token："; }
+  .remark-cell::before { content: "备注："; }
   .credential-cell .account-copy-button { min-width: 0; width: auto; }
   .added-time-cell::before { content: "添加时间："; color: #8a8a84; font-size: 12px; }
   .mail-header { align-items: flex-start; padding: 20px 18px; }
@@ -926,12 +933,18 @@ body::before {
 #email-table td:last-child .actions {
   justify-content: center;
 }
-#email-table th:nth-child(2), #email-table td:nth-child(2) { width: 22%; }
-#email-table th:nth-child(3), #email-table td:nth-child(3) { width: 130px; }
-#email-table th:nth-child(4), #email-table td:nth-child(4) { width: 155px; }
-#email-table th:nth-child(5), #email-table td:nth-child(5) { width: auto; }
-#email-table th:nth-child(6), #email-table td:nth-child(6) { width: 170px; }
-#email-table th:last-child, #email-table td:last-child { width: 245px; }
+/* 账号表 8 列：勾选 / 账号 / 密码 / Client ID / Refresh Token / 备注 / 添加时间 / 操作。
+   min-width 保证备注列在最窄的桌面布局下仍有约 190px，窄于此则表格容器横向滚动，
+   而不是像 v0.6.2 那样把 Refresh Token 压成 0 宽。table-layout: fixed 下单元格的
+   min-width 不生效，所以最小宽度只能加在表格上。 */
+#email-table { table-layout: fixed; min-width: 1168px; }
+#email-table th:nth-child(2), #email-table td:nth-child(2) { width: 16%; }
+#email-table th:nth-child(3), #email-table td:nth-child(3) { width: 106px; }
+#email-table th:nth-child(4), #email-table td:nth-child(4) { width: 140px; }
+#email-table th:nth-child(5), #email-table td:nth-child(5) { width: 140px; }
+#email-table th:nth-child(6), #email-table td:nth-child(6) { width: auto; }
+#email-table th:nth-child(7), #email-table td:nth-child(7) { width: 150px; }
+#email-table th:last-child, #email-table td:last-child { width: 196px; }
 #mail-table th, #mail-table td { vertical-align: middle; }
 #mail-table th:last-child, #mail-table td:last-child { text-align: center; }
 #mail-table tbody tr:not(:has(.empty)) { cursor: pointer; }
@@ -941,23 +954,28 @@ body::before {
 #account-section .pagination { margin-left: auto; }
 #account-section .per-page { margin-left: 4px; }
 @media (max-width: 760px) {
+  #email-table { table-layout: auto; min-width: 0; }
   #email-table th:nth-child(n), #email-table td:nth-child(n),
   #mail-table th:nth-child(n), #mail-table td:nth-child(n) { width: 100%; text-align: left; }
-  #email-table td:last-child .actions { justify-content: flex-start; }
+  #email-table td:last-child .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; justify-content: flex-start; }
 }
 
 /* Account editor */
-.edit-account-modal .modal { width: min(680px, calc(100vw - 32px)); max-width: 680px; }
-.account-edit-form { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.account-edit-form .form-group { margin: 0; }
-.account-edit-form .form-group:last-child { grid-column: 1 / -1; }
-.account-edit-form textarea { min-height: 132px; resize: vertical; }
-#email-table th:last-child, #email-table td:last-child { width: 220px; }
+.edit-account-modal .modal { width: min(680px, calc(100vw - 32px)); max-width: 680px; max-height: calc(100vh - 40px); display: flex; flex-direction: column; }
+.edit-account-modal .modal-body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.account-edit-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.account-edit-form .form-group { margin: 0; min-width: 0; }
+.account-edit-form .account-remark-group,
+.account-edit-form .account-status-group { grid-column: 1 / -1; }
+.account-edit-form .account-status-group:empty,
+.account-edit-form .account-status-group:has(.validation-status[hidden]) { display: none; }
+/* Client ID 与 Refresh Token 使用同款文本框，横向并排且顶部对齐；右下角可自由拖动放大。 */
+.account-edit-form textarea { resize: both; }
+.account-edit-form .resizable-textarea { width: 100%; min-width: 100%; min-height: 118px; max-height: none; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: 13px; line-height: 1.55; }
+.account-edit-form .account-remark-group .resizable-textarea { min-height: 132px; font-family: inherit; font-size: 14px; }
 @media (max-width: 760px) {
-  .account-edit-form { grid-template-columns: 1fr; }
-  .account-edit-form .form-group:last-child { grid-column: auto; }
-  #email-table th:last-child, #email-table td:last-child { width: 100%; }
-  #email-table td:last-child .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .account-edit-form { grid-template-columns: minmax(0, 1fr); }
+  .account-edit-form .resizable-textarea { min-height: 104px; }
 }
 
 .pagination-info .selected-count { display: inline-flex; align-items: center; margin-left: 8px; padding: 4px 9px; border-radius: 999px; background: #eeeeea; color: #777; font-weight: 650; }
@@ -965,7 +983,7 @@ body::before {
 .footer-version { display: inline-flex; margin-left: 9px; padding-left: 9px; border-left: 1px solid #d7d7d2; color: #aaa; font-variant-numeric: tabular-nums; }
 
 
-/* v0.6.1 theme, credential copy actions and mail detail scrolling */
+/* v0.6.3 theme, account remarks and resizable credential fields */
 .header-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .theme-toggle { width: 42px; height: 28px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: #f0f0ed; cursor: pointer; transition: background .2s, border-color .2s; }
 .theme-icon { display: block; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.2); transition: transform .22s, background .22s; }

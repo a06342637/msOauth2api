@@ -57,6 +57,7 @@
                 <th>密码</th>
                 <th>Client ID</th>
                 <th>Refresh Token</th>
+                <th>备注</th>
                 <th>添加时间</th>
                 <th>操作</th>
               </tr>
@@ -70,7 +71,7 @@
             <span class="pagination-info" id="pagination-info">共 0 条</span>
             <div class="batch-actions" id="batch-actions" hidden>
               <button class="btn btn-sm btn-copy-account" type="button" data-action="copy-account" title="按 邮箱----密码 的格式复制选中账号">复制账号</button>
-              <button class="btn btn-sm btn-export" type="button" data-action="export">复制导出</button>
+              <button class="btn btn-sm btn-export" type="button" data-action="export" title="按 邮箱----密码----Client ID----Refresh Token----备注 的格式复制选中账号">复制导出</button>
               <button class="btn btn-sm btn-danger" type="button" data-action="delete">批量删除</button>
             </div>
           </div>
@@ -116,7 +117,7 @@
     </main>
 
     <footer class="footer">
-      Powered by <a href="https://github.com/a06342637/msOauth2api" target="_blank" rel="noopener noreferrer">a06342637/msOauth2api</a><span class="footer-version">v0.6.1</span>
+      Powered by <a href="https://github.com/a06342637/msOauth2api" target="_blank" rel="noopener noreferrer">a06342637/msOauth2api</a><span class="footer-version">v0.6.3</span>
     </footer>
   </div>
 
@@ -130,8 +131,8 @@
       <div class="modal-body">
         <div class="form-group">
           <label for="import-text">账号内容（每行一个）</label>
-          <textarea id="import-text" rows="9" maxlength="5242880" placeholder="邮箱----密码----Client ID----Refresh Token&#10;邮箱----密码----Client ID----Refresh Token"></textarea>
-          <p class="form-help">可直接粘贴账号；也可以在下方选择文件或文件夹，系统会合并读取其中的文件。</p>
+          <textarea id="import-text" rows="9" maxlength="5242880" placeholder="邮箱----密码----Client ID----Refresh Token----备注（可选）&#10;邮箱----密码----Client ID----Refresh Token"></textarea>
+          <p class="form-help">可直接粘贴账号，备注为可选的第五个字段；也可以在下方选择文件或文件夹，系统会合并读取其中的文件。</p>
         </div>
         <div class="import-file-actions">
           <button type="button" class="btn" id="choose-files">选择文件</button>
@@ -172,13 +173,20 @@
           <label for="edit-password">密码 / Key</label>
           <input type="text" id="edit-password" maxlength="1000" autocomplete="off">
         </div>
-        <div class="form-group">
+        <div class="form-group account-credential-group">
           <label for="edit-client-id">Client ID</label>
-          <input type="text" id="edit-client-id" maxlength="200" autocomplete="off">
+          <textarea id="edit-client-id" class="resizable-textarea" rows="4" maxlength="200" autocomplete="off" spellcheck="false"></textarea>
         </div>
-        <div class="form-group">
+        <div class="form-group account-credential-group">
           <label for="edit-refresh-token">Refresh Token</label>
-          <textarea id="edit-refresh-token" rows="6" maxlength="20000"></textarea>
+          <textarea id="edit-refresh-token" class="resizable-textarea" rows="4" maxlength="20000" spellcheck="false"></textarea>
+        </div>
+        <div class="form-group account-remark-group">
+          <label for="edit-remark">备注</label>
+          <textarea id="edit-remark" class="resizable-textarea" rows="5" maxlength="2000" placeholder="可填写账号用途、来源等备注"></textarea>
+          <p class="form-help">备注会保存在本地，并在复制导出时作为最后一个字段输出。可拖动右下角调整输入框大小。</p>
+        </div>
+        <div class="form-group account-status-group">
           <div id="edit-validation-status" class="validation-status validation-status-compact" role="status" aria-live="polite" hidden></div>
         </div>
       </div>
