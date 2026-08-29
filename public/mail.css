@@ -771,27 +771,28 @@ body::before {
   background: radial-gradient(circle at 50% 0%, rgba(242,229,200,.58), transparent 38%), linear-gradient(rgba(248,248,246,.48), rgba(248,248,246,.48));
 }
 
-.container { position: relative; max-width: 1360px; padding: 0 30px; }
-.header { min-height: 112px; padding: 26px 4px 20px; display: flex; align-items: center; gap: 14px; }
-.brand-mark { width: 50px; height: 50px; border-radius: 15px; background: #111; color: #fff; display: grid; place-items: center; font-size: 24px; font-weight: 800; box-shadow: 0 10px 24px rgba(0,0,0,.14); }
-.brand-copy h1 { font-size: 22px; line-height: 1.2; letter-spacing: -.04em; }
-.brand-copy p { margin-top: 5px; color: var(--muted); font-size: 12px; }
-.status-pill { margin-left: auto; padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.8); color: #666; font-size: 12px; box-shadow: 0 3px 12px rgba(0,0,0,.04); }
+/* 页面外框和标题区尽量矮，把竖直空间留给账号表。 */
+.container { position: relative; max-width: 1560px; padding: 0 24px; }
+.header { min-height: 72px; padding: 14px 4px 10px; display: flex; align-items: center; gap: 12px; }
+.brand-mark { width: 40px; height: 40px; border-radius: 13px; background: #111; color: #fff; display: grid; place-items: center; font-size: 20px; font-weight: 800; box-shadow: 0 8px 20px rgba(0,0,0,.14); }
+.brand-copy h1 { font-size: 19px; line-height: 1.2; letter-spacing: -.04em; }
+.brand-copy p { margin-top: 2px; color: var(--muted); font-size: 12px; }
+.status-pill { margin-left: auto; padding: 6px 11px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.8); color: #666; font-size: 12px; box-shadow: 0 3px 12px rgba(0,0,0,.04); }
 .status-pill i { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.12); }
 
 .main { border: 1px solid rgba(214,214,210,.9); border-radius: var(--radius-lg); background: var(--paper); box-shadow: 0 24px 70px rgba(36,34,28,.09), 0 2px 8px rgba(0,0,0,.04); backdrop-filter: blur(16px); }
-.section-heading { padding: 24px 26px 4px; display: flex; align-items: end; justify-content: space-between; }
-.eyebrow { display: block; margin-bottom: 4px; color: #a1a1aa; font-size: 10px; font-weight: 750; letter-spacing: .16em; }
-.section-heading h2, .mail-header h2 { font-size: 24px; line-height: 1.2; letter-spacing: -.04em; }
-.section-heading p, .mail-header p { margin-top: 5px; color: var(--muted); font-size: 13px; }
+.section-heading { padding: 14px 24px 0; display: flex; align-items: end; justify-content: space-between; }
+.eyebrow { display: block; margin-bottom: 3px; color: #a1a1aa; font-size: 10px; font-weight: 750; letter-spacing: .16em; }
+.section-heading h2, .mail-header h2 { font-size: 19px; line-height: 1.2; letter-spacing: -.04em; }
+.section-heading p, .mail-header p { margin-top: 2px; color: var(--muted); font-size: 12px; }
 
-.toolbar { margin: 16px 24px 18px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: #fafaf9; align-items: center; }
+.toolbar { margin: 11px 24px 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 14px; background: #fafaf9; align-items: center; }
 .toolbar-field { flex: 1; min-width: 220px; }
 .toolbar-field span { display: none; }
-.search-input { width: 100%; height: 42px; padding-left: 38px; border-color: transparent; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23888' stroke-width='1.8'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='m11 11 4 4'/%3E%3C/svg%3E") no-repeat 13px center; box-shadow: inset 0 0 0 1px #e6e6e3; }
+.search-input { width: 100%; height: 38px; padding-left: 38px; border-color: transparent; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23888' stroke-width='1.8'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='m11 11 4 4'/%3E%3C/svg%3E") no-repeat 13px center; box-shadow: inset 0 0 0 1px #e6e6e3; }
 .search-input:focus { border-color: #111; box-shadow: 0 0 0 3px rgba(17,17,17,.08); }
 .toolbar-actions { margin-left: auto; }
-.btn { min-height: 40px; padding: 9px 16px; border-color: #dededb; border-radius: 12px; font-weight: 650; color: #2b2b2b; }
+.btn { min-height: 38px; padding: 8px 15px; border-color: #dededb; border-radius: 12px; font-weight: 650; color: #2b2b2b; }
 .btn:hover { background: #f2f2ef; border-color: #c9c9c5; transform: translateY(-1px); }
 .btn-primary { background: #111; border-color: #111; color: #fff; box-shadow: 0 7px 16px rgba(0,0,0,.12); }
 .btn-primary:hover { background: #292929; color: #fff; }
@@ -800,8 +801,8 @@ body::before {
 
 .table-wrap { margin: 0 24px; border: 1px solid var(--line); border-radius: 16px; background: #fff; overflow: auto; }
 .table { table-layout: fixed; }
-.table th { height: 46px; padding: 10px 16px; background: #f5f5f3; color: #777; font-size: 10px; font-weight: 750; letter-spacing: .09em; }
-.table td { height: 58px; padding: 10px 16px; border-color: #eeeeeb; }
+.table th { height: 36px; padding: 8px 14px; background: #f5f5f3; color: #777; font-size: 10px; font-weight: 750; letter-spacing: .09em; }
+.table td { height: 46px; padding: 6px 14px; border-color: #eeeeeb; }
 .table tbody tr:last-child td { border-bottom: 0; }
 .table tr:hover td { background: #fbfbf9; }
 .table th:first-child { border-radius: 15px 0 0 0; }
@@ -817,7 +818,7 @@ body::before {
 .added-time { color: #696965; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .actions { justify-content: flex-end; }
 .empty { height: 220px !important; color: #9b9b96 !important; }
-.pagination-wrap { padding: 16px 24px 20px; border: 0; }
+.pagination-wrap { padding: 9px 24px 12px; border: 0; }
 .pagination button, .per-page { border-color: var(--line); border-radius: 9px; background: #fff; }
 .pagination button.active { background: #111; border-color: #111; color: #fff; }
 
@@ -853,22 +854,21 @@ body::before {
 .mail-content { min-height: 280px; padding: 24px 4px; font-size: 15px; line-height: 1.8; }
 .mail-content iframe { border-radius: 12px !important; background: #fff; }
 
-.footer { padding: 14px 0 20px; color: #999; }
+.footer { padding: 8px 0 12px; color: #999; }
 .toast { border-radius: 999px; box-shadow: 0 12px 35px rgba(0,0,0,.22); }
 
 @media (max-width: 760px) {
   body { overflow: auto; }
   .container { padding: 0 12px; min-height: 100vh; height: auto; }
-  .header { min-height: 92px; }
   .status-pill { display: none; }
   .main { min-height: 70vh; }
-  .section-heading { padding: 20px 18px 2px; }
-  .toolbar { margin: 14px 14px; }
+  .section-heading { padding: 12px 16px 0; }
+  .toolbar { margin: 10px 14px; }
   .toolbar-actions { width: 100%; margin: 0; display: grid; grid-template-columns: 1fr 1fr; }
   .toolbar-actions .btn:first-child { grid-column: span 2; }
+  #account-section .table-wrap { margin: 0 14px; }
   .table-wrap { margin: 0 14px; border: 0; background: transparent; overflow: visible; }
-  /* 卡片布局下表头不再参与排版，但保留在无障碍树中供屏幕阅读器朗读。 */
-  #email-table thead, #mail-table thead {
+  #mail-table thead {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -879,22 +879,12 @@ body::before {
     white-space: nowrap;
     border: 0;
   }
-  #email-table, #email-table tbody, #email-table tr, #email-table td, #mail-table, #mail-table tbody, #mail-table tr, #mail-table td { display: block; width: 100%; }
-  #email-table tr, #mail-table tr { position: relative; margin-bottom: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
-  #email-table td, #mail-table td { height: auto; padding: 5px 0; border: 0; }
-  #email-table .check-col { position: absolute; top: 12px; right: 10px; width: auto; }
-  .actions { margin-top: 8px; justify-content: flex-start; }
-  .credential-cell { display: flex !important; align-items: center; gap: 7px; max-width: 100%; }
-  .credential-cell::before { flex: 0 0 auto; color: #8a8a84; font-size: 12px; }
-  .password-cell::before { content: "密码："; }
-  .client-id-cell::before { content: "Client ID："; }
-  .refresh-token-cell::before { content: "Refresh Token："; }
-  .remark-cell::before { content: "备注："; }
-  .credential-cell .account-copy-button { min-width: 0; width: auto; }
-  .added-time-cell::before { content: "添加时间："; color: #8a8a84; font-size: 12px; }
+  #mail-table, #mail-table tbody, #mail-table tr, #mail-table td { display: block; width: 100%; }
+  #mail-table tr { position: relative; margin-bottom: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+  #mail-table td { height: auto; padding: 5px 0; border: 0; }
   .mail-header { align-items: flex-start; padding: 20px 18px; }
   .mail-meta { flex-direction: column; gap: 5px; }
-  .pagination-wrap { padding: 12px 14px 18px; }
+  .pagination-wrap { padding: 10px 14px 14px; }
 }
 
 
@@ -919,7 +909,6 @@ body::before {
 .mail-address, .mail-subject, .mail-date { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mail-meta { flex-wrap: wrap; }
 @media (max-width: 760px) {
-  #email-table td.refresh-token-cell { display: flex; max-width: 100%; }
   .mail-header { flex-wrap: wrap; }
   .mail-refresh-btn { width: 100%; margin-left: 0; }
 }
@@ -934,12 +923,13 @@ body::before {
   justify-content: center;
 }
 /* 账号表 8 列：勾选 / 账号 / 密码 / Client ID / Refresh Token / 备注 / 添加时间 / 操作。
-   min-width 保证备注列在最窄的桌面布局下仍有约 190px，窄于此则表格容器横向滚动，
-   而不是像 v0.6.2 那样把 Refresh Token 压成 0 宽。table-layout: fixed 下单元格的
-   min-width 不生效，所以最小宽度只能加在表格上。 */
-#email-table { table-layout: fixed; min-width: 1168px; }
+   min-width 保证备注列在最窄的桌面布局下仍够放下省略后的文本，窄于此则表格容器横向滚动，
+   而不是像 v0.6.2 那样把 Refresh Token 压成 0 宽。1148 这个值是按 1280 宽的屏幕反推的：
+   1280 减去容器和表格容器的左右外距、边框、纵向滚动条之后还剩 1165px。
+   table-layout: fixed 下单元格的 min-width 不生效，所以最小宽度只能加在表格上。 */
+#email-table { table-layout: fixed; min-width: 1148px; }
 #email-table th:nth-child(2), #email-table td:nth-child(2) { width: 16%; }
-#email-table th:nth-child(3), #email-table td:nth-child(3) { width: 106px; }
+#email-table th:nth-child(3), #email-table td:nth-child(3) { width: 94px; }
 #email-table th:nth-child(4), #email-table td:nth-child(4) { width: 140px; }
 #email-table th:nth-child(5), #email-table td:nth-child(5) { width: 140px; }
 #email-table th:nth-child(6), #email-table td:nth-child(6) { width: auto; }
@@ -950,14 +940,82 @@ body::before {
 #mail-table tbody tr:not(:has(.empty)) { cursor: pointer; }
 #mail-table tbody tr:not(:has(.empty)):hover td { background: #f7f7f4; }
 #mail-table tbody tr:not(:has(.empty)):active td { background: #efefeb; }
-#account-section .pagination-wrap { min-height: 68px; }
+#account-section .pagination-wrap { min-height: 52px; }
 #account-section .pagination { margin-left: auto; }
 #account-section .per-page { margin-left: 4px; }
+/* 账号表有 8 列，最窄也要 1148px；容器内边距和纵向滚动条算进去后，视口不足 1264px 就必然横向滚动。
+   iPad 竖屏（768）、iPad 横屏（1024）和窄桌面窗口因此改用卡片网格：按可用宽度自动排 1~3 列，
+   一屏能看到的账号比横向滚动的表格更多，触屏上也不用左右拖。
+   这一段必须排在上面所有 #email-table 规则之后，否则 table-layout / min-width 会把卡片布局盖掉。 */
+@media (max-width: 1263px) {
+  /* 装饰性的说明文字在小屏上让位给账号列表。 */
+  .section-heading p, .brand-copy p { display: none; }
+  .section-heading { padding: 11px 20px 0; }
+  .toolbar { margin: 9px 18px 9px; }
+  #account-section .table-wrap { margin: 0 18px; border: 0; background: transparent; overflow: visible; }
+  /* 卡片布局下表头不再参与排版，但保留在无障碍树中供屏幕阅读器朗读。 */
+  #email-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  #email-table { display: block; table-layout: auto; min-width: 0; }
+  #email-table tbody {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(292px, 1fr));
+    gap: 9px;
+    align-content: start;
+  }
+  /* 卡片内部再排一层网格：字段各占一整行，末尾把「添加时间」和操作按钮并到同一行，省下一行高度。 */
+  #email-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 10px;
+    position: relative;
+    margin: 0;
+    padding: 9px 13px;
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    background: #fff;
+  }
+  #email-table tbody tr:has(.empty) { display: block; grid-column: 1 / -1; padding: 26px 14px; text-align: center; }
+  #email-table tr:hover td { background: transparent; }
+  /* nth-child 只用来抵消桌面列宽（它的权重比下面的类选择器高，别把别的属性也写进来）。 */
+  #email-table th:nth-child(n), #email-table td:nth-child(n) { width: 100%; }
+  #email-table th, #email-table td { display: block; grid-column: 1 / -1; height: auto; padding: 2px 0; border: 0; text-align: left; line-height: 1.42; }
+  #email-table td.added-time-cell { grid-column: 1; width: auto; }
+  #email-table td:last-child { grid-column: 2; width: auto; }
+  #email-table td.check-col { position: absolute; top: 8px; right: 10px; width: auto; padding: 0; }
+  #email-table .actions { margin-top: 0; justify-content: flex-end; gap: 6px; }
+  #email-table .actions .btn { min-height: 28px; padding: 4px 9px; }
+  #email-table .credential-cell, #email-table .account-email-cell, #email-table .added-time-cell { display: flex !important; align-items: center; gap: 6px; max-width: 100%; }
+  #email-table .credential-cell::before, #email-table .added-time-cell::before { flex: 0 0 auto; color: #8a8a84; font-size: 12px; }
+  #email-table .password-cell::before { content: "密码："; }
+  #email-table .client-id-cell::before { content: "Client ID："; }
+  #email-table .refresh-token-cell::before { content: "Refresh Token："; }
+  #email-table .remark-cell::before { content: "备注："; }
+  #email-table .added-time-cell::before { content: "添加时间："; }
+  #email-table .credential-cell .account-copy-button { min-width: 0; width: auto; }
+  #email-table .account-email-cell { padding-right: 26px; font-weight: 700; }
+  #email-table td.refresh-token-cell { display: flex; max-width: 100%; }
+}
+
 @media (max-width: 760px) {
-  #email-table { table-layout: auto; min-width: 0; }
-  #email-table th:nth-child(n), #email-table td:nth-child(n),
+  #email-table tbody { grid-template-columns: minmax(0, 1fr); }
+  #email-table tr { grid-template-columns: minmax(0, 1fr); }
+  #email-table td.added-time-cell, #email-table td:last-child { grid-column: 1 / -1; width: 100%; }
+  #email-table .actions { margin-top: 6px; justify-content: flex-start; }
+  #email-table td:last-child .actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; }
+  /* 手机是触屏，按钮要比 iPad 卡片里的更高一些。 */
+  #email-table .actions .btn { min-height: 34px; padding: 6px 8px; }
   #mail-table th:nth-child(n), #mail-table td:nth-child(n) { width: 100%; text-align: left; }
-  #email-table td:last-child .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; justify-content: flex-start; }
 }
 
 /* Account editor */
@@ -983,7 +1041,7 @@ body::before {
 .footer-version { display: inline-flex; margin-left: 9px; padding-left: 9px; border-left: 1px solid #d7d7d2; color: #aaa; font-variant-numeric: tabular-nums; }
 
 
-/* v0.6.3 theme, account remarks and resizable credential fields */
+/* v0.6.4 theme, account remarks, resizable credential fields and compact responsive layout */
 .header-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .theme-toggle { width: 42px; height: 28px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: #f0f0ed; cursor: pointer; transition: background .2s, border-color .2s; }
 .theme-icon { display: block; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.2); transition: transform .22s, background .22s; }
@@ -1031,6 +1089,11 @@ body::before {
 [data-theme="dark"] .mail-content iframe { background: #fff; }
 [data-theme="dark"] .footer a:hover { color: #fff; }
 
+/* 卡片布局给 #email-table tr 写死了白底，ID 权重压过主题规则，这里按同样的断点补回暗色。 */
+@media (max-width: 1263px) {
+  [data-theme="dark"] #email-table tr { background: #1a1a19; border-color: #353532; }
+}
+
 @media (max-width: 760px) {
   .header-actions { gap: 6px; }
   .theme-toggle { flex: 0 0 auto; }
@@ -1038,7 +1101,7 @@ body::before {
   .pagination-left { width: 100%; justify-content: space-between; }
   #account-section .pagination { margin-left: 0; }
   .batch-actions .btn { padding-inline: 10px; }
-  [data-theme="dark"] #email-table tr, [data-theme="dark"] #mail-table tr { background: #1a1a19; border-color: #353532; }
+  [data-theme="dark"] #mail-table tr { background: #1a1a19; border-color: #353532; }
 }
 
 body.modal-open { overflow: hidden !important; }
