@@ -421,20 +421,66 @@
     )
   }
 
+  // 中日韩字符在等宽字体里占两个字符宽。按显示宽度而不是字符数截断，
+  // 中文备注和英文备注在同一列里视觉长度才一致，也不会撑破列宽。
+  const WIDE_CHAR_RE = /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏ꥠ-꥿가-힣豈-﫿︐-︙︰-﹯＀-｠￠-￦]/
+
+  const charWidth = char => (WIDE_CHAR_RE.test(char) ? 2 : 1)
+  const displayWidth = value => [...value].reduce((total, char) => total + charWidth(char), 0)
+
+  const sliceByWidth = (value, units, fromEnd = false) => {
+    const chars = [...value]
+    if (fromEnd) chars.reverse()
+    const picked = []
+    let used = 0
+    for (const char of chars) {
+      const width = charWidth(char)
+      if (used + width > units) break
+      used += width
+      picked.push(char)
+    }
+    if (fromEnd) picked.reverse()
+    return picked.join('')
+  }
+
+  const formatCredential = (credential, leading = 8, trailing = 8) => {
+    // 备注可能是多行文本，表格单元格里统一折成一行再做省略。
+    const value = String(credential || '').replace(/\s*[\r\n]+\s*/g, ' ').trim()
+    if (!value) return '—'
+    if (displayWidth(value) <= leading + trailing + 3) return value
+    return `${sliceByWidth(value, leading)}...${sliceByWidth(value, trailing, true)}`
+  }
+
+  // 备注列在宽屏能有 400px 上下，写死字符数会白白浪费大半列宽。
+  // 表格布局下按备注表头的实际宽度反推能放多少字符宽；卡片和手机用固定值。
+  // 单位是字符宽而不是字符数：10 相当于 5 个汉字，正好是手机上原来的长度。
+  const REMARK_UNITS_MOBILE = 10
+  const REMARK_UNITS_CARD = 13
+  const REMARK_UNITS_MIN = 6
+  const CARD_LAYOUT_MAX_WIDTH = 1263
+
+  const remarkFragmentUnits = () => {
+    const viewport = window.innerWidth
+    if (viewport <= 760) return REMARK_UNITS_MOBILE
+    if (viewport <= CARD_LAYOUT_MAX_WIDTH) return REMARK_UNITS_CARD
+    const header = $('#email-table thead th:nth-child(6)')
+    // 单元格左右内边距各 14px；等宽字体下一个字符宽约 7.8px。
+    const usable = header ? header.clientWidth - 28 : 0
+    if (usable <= 0) return REMARK_UNITS_CARD
+    // 减掉中间省略号占的 3 个字符宽，再分给前后两段。
+    return Math.max(REMARK_UNITS_MIN, Math.floor((usable / 7.8 - 3) / 2))
+  }
+
+  let remarkUnitsAtRender = null
+
   const renderTable = () => {
     const tbody = $('#email-table tbody')
     const filtered = getFilteredData()
     const start = (state.currentPage - 1) * state.itemsPerPage
     const end = start + state.itemsPerPage
     const pageData = filtered.slice(start, end)
-
-    const formatCredential = (credential, leading = 8, trailing = 8) => {
-      // 备注可能是多行文本，表格单元格里统一折成一行再做省略。
-      const value = String(credential || '').replace(/\s*[\r\n]+\s*/g, ' ').trim()
-      if (!value) return '—'
-      if (value.length <= leading + trailing + 3) return value
-      return `${value.slice(0, leading)}...${value.slice(-trailing)}`
-    }
+    const remarkUnits = remarkFragmentUnits()
+    remarkUnitsAtRender = remarkUnits
 
     const formatAddedAt = (value) => {
       const date = new Date(value)
@@ -468,7 +514,7 @@
             <button type="button" class="account-copy-button credential-copy-button" data-action="copy-field" data-field="refreshToken" title="点击复制完整 Refresh Token" aria-label="复制 ${escapeHtml(item.email)} 的完整 Refresh Token">${escapeHtml(formatCredential(item.refreshToken, 6, 6))}</button>
           </td>
           <td class="credential-cell remark-cell">
-            <button type="button" class="account-copy-button credential-copy-button" data-action="copy-field" data-field="remark" title="${item.remark ? '点击复制完整备注' : '暂无备注，可在编辑中添加'}" aria-label="${item.remark ? `复制 ${escapeHtml(item.email)} 的完整备注` : `${escapeHtml(item.email)} 暂无备注`}">${escapeHtml(formatCredential(item.remark, 5, 5))}</button>
+            <button type="button" class="account-copy-button credential-copy-button" data-action="copy-field" data-field="remark" title="${item.remark ? '点击复制完整备注' : '暂无备注，可在编辑中添加'}" aria-label="${item.remark ? `复制 ${escapeHtml(item.email)} 的完整备注` : `${escapeHtml(item.email)} 暂无备注`}">${escapeHtml(formatCredential(item.remark, remarkUnits, remarkUnits))}</button>
           </td>
           <td class="added-time-cell"><time class="added-time" datetime="${escapeHtml(item.addedAt)}" title="添加时间：${escapeHtml(formatAddedAt(item.addedAt))}">${escapeHtml(formatAddedAt(item.addedAt))}</time></td>
           <td>
@@ -1950,6 +1996,22 @@
       })
     })
 
+    // 备注的省略长度跟着备注列宽走，容器宽度变化后需要重算。
+    // 只有真正换档时才重绘：重绘后档位稳定，不会和 observer 相互触发。
+    let remarkResizeTimer = null
+    const scheduleRemarkRelayout = () => {
+      clearTimeout(remarkResizeTimer)
+      remarkResizeTimer = setTimeout(() => {
+        if (remarkUnitsAtRender !== null && remarkFragmentUnits() !== remarkUnitsAtRender) renderTable()
+      }, 180)
+    }
+    window.addEventListener('resize', scheduleRemarkRelayout)
+    // ResizeObserver 额外覆盖窗口尺寸没变、但列宽变了的情况（例如纵向滚动条出现或消失）。
+    const remarkLayoutTarget = $('#account-section .table-wrap')
+    if (remarkLayoutTarget && typeof ResizeObserver === 'function') {
+      new ResizeObserver(scheduleRemarkRelayout).observe(remarkLayoutTarget)
+    }
+
   }
 
   const applyTheme = (theme) => {
@@ -1977,7 +2039,7 @@
     }
 
     console.log('%c感谢您使用本项目！', 'color: #666; font-size: 11px;')
-    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.6.4', 'color: #007BFF; font-size: 12px;')
+    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.6.5', 'color: #007BFF; font-size: 12px;')
   }
 
   document.addEventListener('DOMContentLoaded', init)
