@@ -814,6 +814,16 @@ body::before {
 .account-copy-button { display: block; width: 100%; max-width: 100%; padding: 2px 0; overflow: hidden; border: 0; background: transparent; color: inherit; font: inherit; font-weight: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: default; }
 .account-copy-button:active { opacity: .65; }
 .account-copy-button:focus-visible { outline: 2px solid #2b70f6; outline-offset: 3px; border-radius: 3px; }
+
+/* 邮件列表和邮件详情里的发件人/收件人：外观保持纯文本，点一下即可复制。 */
+.mail-copy-button { max-width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.mail-copy-button:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
+.mail-copy-button:active:not(:disabled) { opacity: .6; }
+.mail-copy-button:disabled { cursor: default; opacity: .75; }
+.mail-copy-button:focus-visible { outline: 2px solid #2b70f6; outline-offset: 3px; border-radius: 3px; }
+/* 列表里跟单元格一样单行省略；详情里地址较长，允许换行。 */
+#mail-table .mail-copy-button { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mail-meta .mail-copy-button { display: inline; min-width: 0; overflow-wrap: anywhere; }
 .credential-copy-button { color: #696965; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-variant-numeric: tabular-nums; }
 .added-time { color: #696965; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .actions { justify-content: flex-end; }

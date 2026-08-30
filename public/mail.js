@@ -129,7 +129,11 @@
       clearMailContent()
       ;['#mail-modal-title', '#mail-modal-sender', '#mail-modal-recipient', '#mail-modal-date'].forEach(selector => {
         const field = $(selector)
-        if (field) field.textContent = ''
+        if (!field) return
+        field.textContent = ''
+        // 发件人/收件人是复制按钮，顺带清掉复制源值，避免残留上一封邮件的地址。
+        delete field.dataset.copyValue
+        delete field.dataset.copyLabel
       })
     }
   }
@@ -825,20 +829,38 @@
     remark: '备注'
   })
 
-  const copyAccountField = async (index, field) => {
-    const label = COPY_FIELD_LABELS[field]
-    if (!label) return
-    const value = String(getEmailData()[index]?.[field] || '')
-    if (!value) {
+  // 邮件列表和邮件详情里的发件人/收件人没有账号索引可用，直接按值复制。
+  const copyTextValue = async (value, label) => {
+    const text = String(value || '').trim()
+    if (!text) {
       showToast(label + '为空，无法复制')
       return
     }
     try {
-      await copyToClipboard(value)
+      await copyToClipboard(text)
       showToast('已复制' + label)
     } catch (error) {
       showToast(error.message || '复制失败，请检查浏览器权限')
     }
+  }
+
+  const copyAccountField = (index, field) => {
+    const label = COPY_FIELD_LABELS[field]
+    if (!label) return
+    return copyTextValue(getEmailData()[index]?.[field], label)
+  }
+
+  // 把一个只读文本位置变成可点复制的按钮：同时写入显示文本、复制源值和无障碍描述。
+  const setCopyableText = (selector, value, label, fallback) => {
+    const target = $(selector)
+    if (!target) return
+    const text = String(value || '').trim()
+    target.textContent = text || fallback
+    target.dataset.copyValue = text
+    target.dataset.copyLabel = label
+    target.disabled = !text
+    target.title = text ? `点击复制${label}` : `${label}未知`
+    target.setAttribute('aria-label', text ? `复制${label} ${text}` : `${label}未知`)
   }
 
   const serializeAccount = item => {
@@ -1424,15 +1446,24 @@
       return
     }
 
-    tbody.innerHTML = pageData.map((item, index) => `
+    tbody.innerHTML = pageData.map((item, index) => {
+      const sender = String(item.send || '').trim()
+      const recipient = String(item.to || state.currentMailbox?.email || '').trim()
+      // 发件人和收件人是可点复制的按钮；点击它们只复制，不会顺带打开这封邮件。
+      const addressCell = (value, label, fallback) => `
+        <td class="mail-address">
+          <button type="button" class="mail-copy-button" data-action="copy-text" data-copy-value="${escapeHtml(value)}" data-copy-label="${escapeHtml(label)}"${value ? '' : ' disabled'} title="${value ? `${escapeHtml(value)}&#10;点击复制${escapeHtml(label)}` : `${escapeHtml(label)}未知`}" aria-label="${value ? `复制${escapeHtml(label)} ${escapeHtml(value)}` : `${escapeHtml(label)}未知`}">${escapeHtml(value || fallback)}</button>
+        </td>`
+      return `
       <tr class="${isMailLocallyRead(item) ? 'mail-row-read' : ''}" tabindex="0" data-mail-index="${start + index}" aria-label="打开邮件：${escapeHtml(item.subject || '无主题')}${item.mailbox === 'Junk' ? '（垃圾箱）' : ''}">
-        <td class="mail-address" title="${escapeHtml(item.send || '')}">${escapeHtml(item.send || '未知发件人')}</td>
-        <td class="mail-address" title="${escapeHtml(item.to || state.currentMailbox?.email || '')}">${escapeHtml(item.to || state.currentMailbox?.email || '未知收件人')}</td>
+        ${addressCell(sender, '发件人', '未知发件人')}
+        ${addressCell(recipient, '收件人', '未知收件人')}
         <td class="mail-subject">${item.mailbox === 'Junk' ? '<span class="mail-folder-badge" title="来自垃圾箱">垃圾箱</span>' : ''}<span class="mail-subject-text">${escapeHtml(item.subject || '(无主题)')}</span></td>
         <td class="mail-date">${escapeHtml(formatMailDate(item.date))}</td>
         <td><button type="button" class="btn btn-sm" data-action="view">查看</button></td>
       </tr>
-    `).join('')
+    `
+    }).join('')
 
     renderMailPagination()
   }
@@ -1773,8 +1804,8 @@
     }
 
     $('#mail-modal-title').textContent = item.subject || '（无主题）'
-    $('#mail-modal-sender').textContent = item.send || '未知发件人'
-    $('#mail-modal-recipient').textContent = item.to || state.currentMailbox?.email || '未知收件人'
+    setCopyableText('#mail-modal-sender', item.send, '发件人', '未知发件人')
+    setCopyableText('#mail-modal-recipient', item.to || state.currentMailbox?.email, '收件人', '未知收件人')
     $('#mail-modal-date').textContent = formatMailDate(item.date)
 
     const viewId = ++state.mailDetailViewId
@@ -1932,6 +1963,14 @@
       if (!tr) return
       viewMailDetail(Number(tr.dataset.mailIndex))
     }
+    // 发件人/收件人的复制按钮在列表和详情里都用 data-action="copy-text"，统一在这里处理。
+    const handleCopyTextClick = target => {
+      const button = target.closest('button[data-action="copy-text"]')
+      if (!button) return false
+      copyTextValue(button.dataset.copyValue, button.dataset.copyLabel || '内容')
+      return true
+    }
+    document.addEventListener('click', e => { handleCopyTextClick(e.target) })
     const mailTableBody = $('#mail-table tbody')
     const scheduleMailPrefetch = (target, delay = 120) => {
       const row = target.closest('tr[data-mail-index]')
@@ -1951,7 +1990,11 @@
       clearTimeout(state.mailPrefetchTimer)
     })
     mailTableBody.addEventListener('focusin', e => scheduleMailPrefetch(e.target, 80))
-    mailTableBody.addEventListener('click', e => openMailRow(e.target))
+    mailTableBody.addEventListener('click', e => {
+      // 点发件人/收件人只复制，不要顺带把这封邮件打开。
+      if (e.target.closest('button[data-action="copy-text"]')) return
+      openMailRow(e.target)
+    })
     mailTableBody.addEventListener('keydown', e => {
       if (e.target.closest('button')) return
       if (e.key !== 'Enter' && e.key !== ' ') return
@@ -2039,7 +2082,7 @@
     }
 
     console.log('%c感谢您使用本项目！', 'color: #666; font-size: 11px;')
-    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.6.5', 'color: #007BFF; font-size: 12px;')
+    console.log('%c项目地址: https://github.com/a06342637/msOauth2api  版本: 0.6.6', 'color: #007BFF; font-size: 12px;')
   }
 
   document.addEventListener('DOMContentLoaded', init)
